@@ -1,16 +1,57 @@
-import "dotenv/config";
-// server.js — Express + Stripe Checkout + Stripe Webhook + Email DXF (Render)
-// ESM syntax (package.json should include: { "type": "module" })
-// If your project uses CommonJS, convert the top imports to require() and export nothing.
+// server.js — Express + Stripe Checkout + Webhook + Email DXF (ESM)
 
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import Stripe from 'stripe';
 import nodemailer from 'nodemailer';
 
-// --------- Env & App ---------
+// ---------- Helpers (metadata chunking to avoid 500-char Stripe limit) ----------
+function encodeCfgForMeta(obj) {
+  try {
+    const json = JSON.stringify(obj);
+    return Buffer.from(json, 'utf8').toString('base64'); // compact base64
+  } catch {
+    return '';
+  }
+}
+function splitMeta(key, value, chunkSize = 480) {
+  const meta = {};
+  if (!value) return meta;
+  if (value.length <= 500) {
+    meta[key] = value;
+    return meta;
+  }
+  const parts = Math.ceil(value.length / chunkSize);
+  meta[`${key}_parts`] = String(parts);
+  for (let i = 0; i < parts; i++) {
+    meta[`${key}_${i + 1}`] = value.slice(i * chunkSize, (i + 1) * chunkSize);
+  }
+  return meta;
+}
+function reassembleCfgFromMeta(md) {
+  if (!md) return null;
+  if (md.cfg) {
+    try {
+      return JSON.parse(Buffer.from(md.cfg, 'base64').toString('utf8'));
+    } catch {
+      return null;
+    }
+  }
+  const parts = Number(md.cfg_parts || 0);
+  if (!parts) return null;
+  let joined = '';
+  for (let i = 1; i <= parts; i++) joined += md[`cfg_${i}`] || '';
+  try {
+    return JSON.parse(Buffer.from(joined, 'base64').toString('utf8'));
+  } catch {
+    return null;
+  }
+}
+
+// ---------- Env & App ----------
 const PORT = process.env.PORT || 3000;
-const FRONTEND_URL = process.env.FRONTEND_URL || 'https://your-frontend.example.com';
+const FRONTEND_URL = process.env.FRONTEND_URL || 'https://rockcreekgranite.com';
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || FRONTEND_URL)
   .split(',')
   .map(s => s.trim())
@@ -22,64 +63,50 @@ if (!process.env.SMTP_HOST && !process.env.RESEND_API_KEY) {
   console.warn('[WARN] No SMTP creds or RESEND_API_KEY set — /api/email-dxf will fail.');
 }
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
-  apiVersion: '2024-06-20',
-});
-
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', { apiVersion: '2024-06-20' });
 const app = express();
 app.set('trust proxy', true);
 
-// --- Webhook MUST be before any JSON body parser ---
-app.post(
-  '/api/checkout-webhook',
-  express.raw({ type: 'application/json' }),
-  (req, res) => {
-    const sig = req.headers['stripe-signature'];
-    const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
-
-    let event;
-    try {
-      event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
-    } catch (err) {
-      console.error('Webhook verify failed:', err.message);
-      return res.status(400).send(`Webhook Error: ${err.message}`);
-    }
-
-    try {
-      switch (event.type) {
-        case 'checkout.session.completed': {
-          const session = event.data.object;
-          // TODO: fulfill order: persist to DB, send receipt, kick off fabrication, etc.
-          console.log('[stripe] checkout.session.completed', {
-            id: session.id,
-            amount_total: session.amount_total,
-            currency: session.currency,
-            customer_email: session.customer_details?.email,
-            metadata: session.metadata,
-          });
-          break;
-        }
-        case 'checkout.session.async_payment_succeeded':
-        case 'checkout.session.async_payment_failed':
-        default:
-          // Intentionally noop for other events, but keep logs in dev
-          if (process.env.NODE_ENV !== 'production') {
-            console.log(`[stripe] ${event.type}`);
-          }
-      }
-    } catch (e) {
-      console.error('Webhook handler error:', e);
-      return res.sendStatus(500);
-    }
-
-    res.json({ received: true });
+// ---------- Stripe Webhook (must be BEFORE express.json) ----------
+app.post('/api/checkout-webhook', express.raw({ type: 'application/json' }), (req, res) => {
+  const sig = req.headers['stripe-signature'];
+  const secret = process.env.STRIPE_WEBHOOK_SECRET;
+  let event;
+  try {
+    event = stripe.webhooks.constructEvent(req.body, sig, secret);
+  } catch (err) {
+    console.error('Webhook verify failed:', err.message);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
   }
-);
 
-// ---- CORS + JSON (after webhook) ----
+  try {
+    switch (event.type) {
+      case 'checkout.session.completed': {
+        const session = event.data.object;
+        const cfg = reassembleCfgFromMeta(session.metadata);
+        console.log('[stripe] checkout.session.completed', {
+          id: session.id,
+          email: session.customer_details?.email,
+          amount_total: session.amount_total,
+          cfg_summary: cfg ? { shape: cfg.shape, zip: cfg.zip } : null,
+        });
+        // TODO: fulfill order here (DB save, emails, fabrication job, etc.)
+        break;
+      }
+      default:
+        if (process.env.NODE_ENV !== 'production') console.log(`[stripe] ${event.type}`);
+    }
+  } catch (e) {
+    console.error('Webhook handler error:', e);
+    return res.sendStatus(500);
+  }
+  res.json({ received: true });
+});
+
+// ---------- CORS + JSON (after webhook) ----------
 const corsOptions = {
   origin(origin, cb) {
-    if (!origin) return cb(null, true); // server-to-server or curl
+    if (!origin) return cb(null, true); // server-to-server
     const ok = ALLOWED_ORIGINS.includes('*') || ALLOWED_ORIGINS.includes(origin);
     cb(ok ? null : new Error('Not allowed by CORS'), ok);
   },
@@ -87,7 +114,7 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json({ limit: '5mb' }));
 
-// --------- Shared Pricing Logic (mirror of client) ---------
+// ---------- Pricing (mirror of client) ----------
 const DOLLARS_PER_SQFT = 55;
 const LBS_PER_SQFT = 10.9;
 const LTL_CWT_BASE = 35.9;
@@ -119,38 +146,41 @@ function areaSqft(shape, d) {
       return 0;
   }
 }
-function polyCircumDiam(n, s) {
-  const R = s / (2 * Math.sin(Math.PI / n));
-  return 2 * R;
-}
 function distanceBand(originZip, destZip) {
   const o = parseInt(String(originZip || '63052').slice(0, 3), 10);
   const d = parseInt(String(destZip || '00000').slice(0, 3), 10);
   const approxMiles = Math.abs(o - d) * 20 + 100;
-  return DISTANCE_BANDS.find((b) => approxMiles <= b.max).mult;
+  return DISTANCE_BANDS.find(b => approxMiles <= b.max).mult;
 }
 function shippingEstimate(area, destZip, originZip = '63052') {
   const weight = area * LBS_PER_SQFT;
   const cwt = Math.max(1, Math.ceil(weight / 100));
   const mult = distanceBand(originZip, destZip);
   const base = cwt * LTL_CWT_BASE * mult;
-  const withPacking = base * 1.2;
-  return { weight, cwt, mult, ltl: withPacking };
+  return { weight, cwt, mult, ltl: base * 1.2 };
 }
 function backsplashSqft(cfg) {
   if (!cfg || cfg.shape !== 'rectangle' || !cfg.backsplash) return 0;
   const L = +cfg.dims?.L || 0;
   const W = +cfg.dims?.W || 0;
   const edges = Array.isArray(cfg.edges) ? cfg.edges : [];
-  const unpol = ['top', 'right', 'bottom', 'left'].filter((k) => !edges.includes(k));
+  const unpol = ['top', 'right', 'bottom', 'left'].filter(k => !edges.includes(k));
   const lenMap = { top: L, bottom: L, left: W, right: W };
   const areaIn2 = unpol.reduce((sum, k) => sum + (lenMap[k] || 0) * 4, 0);
   return areaIn2 / 144;
 }
+function taxRateByZip(zip) {
+  if (!/^\d{5}$/.test(zip || '')) return 0.07;
+  if (/^63/.test(zip)) return 0.0825;
+  if (/^62/.test(zip)) return 0.0875;
+  return 0.07;
+}
 function computePricing(cfg) {
   const area = areaSqft(cfg?.shape, cfg?.dims);
   const material = area * DOLLARS_PER_SQFT;
-  const sinks = (cfg?.shape === 'rectangle' ? (cfg?.sinks || []).reduce((acc, s) => acc + (SINK_PRICES[s.key] || 0), 0) : 0);
+  const sinks = cfg?.shape === 'rectangle'
+    ? (cfg?.sinks || []).reduce((acc, s) => acc + (SINK_PRICES[s.key] || 0), 0)
+    : 0;
   const bpsf = backsplashSqft(cfg) * DOLLARS_PER_SQFT;
   const ship = shippingEstimate(area + backsplashSqft(cfg), cfg?.zip || '');
   const taxRate = taxRateByZip(cfg?.zip);
@@ -159,28 +189,10 @@ function computePricing(cfg) {
   const total = services + tax;
   return { area, material, sinks, backsplash: bpsf, ship, taxRate, tax, total, services };
 }
-function taxRateByZip(zip) {
-  if (!/^\d{5}$/.test(zip || '')) return 0.07;
-  if (/^63/.test(zip)) return 0.0825;
-  if (/^62/.test(zip)) return 0.0875;
-  return 0.07;
-}
-const toCents = (usd) => Math.max(0, Math.round((+usd || 0) * 100));
 
-function encodeCfg(obj) {
-  try {
-    return encodeURIComponent(
-      Buffer.from(encodeURIComponent(JSON.stringify(obj)), 'utf8').toString('base64')
-    );
-  } catch (e) {
-    return '';
-  }
-}
-
-// --------- Email DXF (nodemailer) ---------
+// ---------- Email DXF ----------
 function createTransporter() {
   if (process.env.RESEND_API_KEY) {
-    // Example: Resend via SMTP (adjust host if they give you one)
     return nodemailer.createTransport({
       host: 'smtp.resend.com',
       port: 587,
@@ -202,14 +214,13 @@ app.post('/api/email-dxf', async (req, res) => {
   try {
     const { to, bcc, subject, config, dxfBase64 } = req.body || {};
     if (!to || !dxfBase64) return res.status(400).json({ error: 'Missing to or dxfBase64' });
-
     const buf = Buffer.from(dxfBase64, 'base64');
     const transporter = createTransporter();
-    const summary = `Shape: ${config?.shape}\nSize: ${JSON.stringify(
-      config?.dims
-    )}\nPolished: ${Array.isArray(config?.edges) ? config.edges.join(', ') : 'None'}\nBacksplash: ${
-      config?.backsplash ? 'Yes' : 'No'
-    }\nSinks: ${(config?.sinks || []).length}`;
+    const summary = `Shape: ${config?.shape}
+Size: ${JSON.stringify(config?.dims)}
+Polished: ${Array.isArray(config?.edges) ? config.edges.join(', ') : 'None'}
+Backsplash: ${config?.backsplash ? 'Yes' : 'No'}
+Sinks: ${(config?.sinks || []).length}`;
 
     await transporter.sendMail({
       from: process.env.SMTP_FROM || 'no-reply@yourdomain.com',
@@ -217,11 +228,8 @@ app.post('/api/email-dxf', async (req, res) => {
       bcc,
       subject: subject || 'RCG DXF',
       text: `Attached is your DXF cut sheet.\n\n${summary}`,
-      attachments: [
-        { filename: 'RCG_CutSheet.dxf', content: buf, contentType: 'application/dxf' },
-      ],
+      attachments: [{ filename: 'RCG_CutSheet.dxf', content: buf, contentType: 'application/dxf' }],
     });
-
     res.json({ ok: true });
   } catch (e) {
     console.error('email-dxf failed:', e);
@@ -229,15 +237,15 @@ app.post('/api/email-dxf', async (req, res) => {
   }
 });
 
-// --------- Stripe Checkout: create session ---------
+// ---------- Stripe: create Checkout Session ----------
 app.post('/api/create-checkout-session', async (req, res) => {
   try {
     const { config, email } = req.body || {};
     if (!config) return res.status(400).json({ error: 'Missing config' });
 
+    // Server-authored pricing
     const p = computePricing(config);
 
-    // Build line items (services + tax as separate items)
     const line_items = [
       {
         price_data: {
@@ -246,7 +254,7 @@ app.post('/api/create-checkout-session', async (req, res) => {
             name: 'Custom Porcelain Countertop',
             description: 'Material, fabrication, sinks, backsplash (if selected), packaging & LTL shipping',
           },
-          unit_amount: toCents(p.services),
+          unit_amount: Math.max(0, Math.round(p.services * 100)),
         },
         quantity: 1,
       },
@@ -256,14 +264,32 @@ app.post('/api/create-checkout-session', async (req, res) => {
         price_data: {
           currency: 'usd',
           product_data: { name: 'Sales Tax' },
-          unit_amount: toCents(p.tax),
+          unit_amount: Math.max(0, Math.round(p.tax * 100)),
         },
         quantity: 1,
       });
     }
 
-    // Optional: collect shipping address to confirm ZIP (Stripe will validate)
-    const shipping_address_collection = { allowed_countries: ['US'] };
+    // Compact config for metadata
+    const compactCfg = {
+      shape: config.shape,
+      dims: config.dims,
+      sinks: Array.isArray(config.sinks)
+        ? config.sinks.map(s => ({
+            key: s.key,
+            x: Number(s.x?.toFixed?.(2) ?? s.x),
+            y: Number(s.y?.toFixed?.(2) ?? s.y),
+            faucet: s.faucet ?? '1',
+            spread: s.spread ?? null,
+          }))
+        : [],
+      color: config.color,
+      edges: Array.isArray(config.edges) ? config.edges : [],
+      backsplash: !!config.backsplash,
+      zip: String(config.zip || ''),
+    };
+    const cfgB64 = encodeCfgForMeta(compactCfg);
+    const metadata = { zip: String(config.zip || ''), ...splitMeta('cfg', cfgB64) };
 
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
@@ -271,11 +297,8 @@ app.post('/api/create-checkout-session', async (req, res) => {
       success_url: `${FRONTEND_URL}/thank-you?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${FRONTEND_URL}/configurator?canceled=1`,
       customer_email: email || undefined,
-      metadata: {
-        zip: String(config?.zip || ''),
-        cfg: encodeCfg({ ...config, pricing: p }), // compact, base64-encoded
-      },
-      shipping_address_collection,
+      metadata,
+      shipping_address_collection: { allowed_countries: ['US'] },
     });
 
     res.json({ id: session.id, url: session.url });
@@ -285,15 +308,11 @@ app.post('/api/create-checkout-session', async (req, res) => {
   }
 });
 
-// --------- Health ---------
-app.get('/', (req, res) => {
-  res.type('text/plain').send('ok');
-});
-app.get('/.well-known/health', (req, res) => {
-  res.json({ ok: true, ts: new Date().toISOString() });
-});
+// ---------- Health ----------
+app.get('/', (_req, res) => res.type('text/plain').send('ok'));
+app.get('/.well-known/health', (_req, res) => res.json({ ok: true, ts: new Date().toISOString() }));
 
-// --------- Start ---------
+// ---------- Start ----------
 app.listen(PORT, () => {
   console.log(`Server listening on :${PORT}`);
   console.log('Allowed origins:', ALLOWED_ORIGINS.join(', '));
