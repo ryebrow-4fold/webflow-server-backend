@@ -1,3 +1,4 @@
+import "dotenv/config";
 // server.js — Express + Stripe Checkout + Stripe Webhook + Email DXF (Render)
 // ESM syntax (package.json should include: { "type": "module" })
 // If your project uses CommonJS, convert the top imports to require() and export nothing.
