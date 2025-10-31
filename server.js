@@ -308,6 +308,21 @@ app.post('/api/create-checkout-session', async (req, res) => {
   }
 });
 
+// Read a Checkout Session so the thank-you page can show details
+app.get('/api/checkout-session', async (req, res) => {
+  try {
+    const id = req.query.id;
+    if (!id) return res.status(400).json({ ok: false, error: 'missing id' });
+    const session = await stripe.checkout.sessions.retrieve(id, {
+      expand: ['line_items', 'payment_intent', 'customer']
+    });
+    return res.json({ ok: true, session });
+  } catch (e) {
+    console.error('GET /api/checkout-session failed:', e);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 // ---------- Health ----------
 app.get('/', (_req, res) => res.type('text/plain').send('ok'));
 app.get('/.well-known/health', (_req, res) => res.json({ ok: true, ts: new Date().toISOString() }));
