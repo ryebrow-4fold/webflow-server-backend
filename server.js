@@ -1,22 +1,13 @@
-// server.js — Express + Stripe Checkout + Webhook + Email DXF (single mailer, ESM)
+// server.js — Express + Stripe Checkout + Webhook + Email via Resend API (ESM)
 
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import Stripe from 'stripe';
-import nodemailer from 'nodemailer';
 
-// -------------------- Boot logs & safety --------------------
-process.on('uncaughtException', (err) => {
-  console.error('[FATAL] Uncaught exception:', err);
-  process.exit(1);
-});
-process.on('unhandledRejection', (reason) => {
-  console.error('[FATAL] Unhandled rejection:', reason);
-  process.exit(1);
-});
-
-// -------------------- Env --------------------
+/* =========================================
+   Boot / Env
+========================================= */
 const PORT = process.env.PORT || 3000;
 const FRONTEND_URL = process.env.FRONTEND_URL || 'https://www.rockcreekgranite.com';
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || FRONTEND_URL)
@@ -24,88 +15,28 @@ const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || FRONTEND_URL)
   .map(s => s.trim())
   .filter(Boolean);
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', { apiVersion: '2024-06-20' });
+const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || '';
+const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || '';
 
-const MAIL_FROM = process.env.SMTP_FROM || process.env.BUSINESS_EMAIL || 'orders@rockcreekgranite.com';
+const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
 const MAIL_FROM_NAME = process.env.MAIL_FROM_NAME || 'Rock Creek Granite';
+const FROM_EMAIL = process.env.SMTP_FROM || process.env.BUSINESS_EMAIL || 'no-reply@rockcreekgranite.com';
+const ORDER_NOTIFY_EMAIL = process.env.ORDER_NOTIFY_EMAIL || process.env.BUSINESS_EMAIL || FROM_EMAIL;
 
-function envBool(v, def=false) {
-  if (v == null) return def;
-  const s = String(v).toLowerCase();
-  if (['1','true','yes','y','on'].includes(s)) return true;
-  if (['0','false','no','n','off'].includes(s)) return false;
-  return def;
-}
+const stripe = new Stripe(STRIPE_SECRET_KEY, { apiVersion: '2024-06-20' });
 
-// -------------------- ONE mailer for whole app --------------------
-let mail = { transporter: null, describe: '[none]' };
-
-async function buildMailer() {
-  const haveSMTP = !!process.env.SMTP_HOST && !!process.env.SMTP_USER && !!process.env.SMTP_PASS;
-
-  if (haveSMTP) {
-    const secure = process.env.SMTP_SECURE
-      ? envBool(process.env.SMTP_SECURE, true)
-      : String(process.env.SMTP_PORT) === '465';
-    const port = Number(process.env.SMTP_PORT || (secure ? 465 : 587));
-    const host = process.env.SMTP_HOST;
-
-    const transporter = nodemailer.createTransport({
-      host,
-      port,
-      secure, // true => port 465 TLS; false => 587 STARTTLS
-      auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-      // Optional hardening:
-      tls: { rejectUnauthorized: true },
-    });
-
-    mail = {
-      transporter,
-      fromHeader: `"${MAIL_FROM_NAME}" <${MAIL_FROM}>`,
-      describe: `smtp:${host}:${port}`,
-    };
-
-    try {
-      await transporter.verify();
-      console.log(`[MAIL] Mode: ${mail.describe}  From: ${MAIL_FROM}  As: ${MAIL_FROM_NAME}`);
-    } catch (err) {
-      console.error('[MAIL] SMTP verify failed:', err.message);
-    }
-    return;
-  }
-
-  console.warn('[MAIL] No email provider configured');
-  mail = { transporter: null, fromHeader: MAIL_FROM, describe: '[none]' };
-}
-
-await buildMailer();
-
-// Simple helper to guarantee we always use the same transporter
-async function sendMail({ to, bcc, subject, text, html, attachments }) {
-  if (!mail.transporter) throw new Error('Mail not configured');
-  return mail.transporter.sendMail({
-    from: mail.fromHeader,
-    to,
-    bcc,
-    subject,
-    text,
-    html,
-    attachments,
-  });
-}
-
-// -------------------- Express --------------------
+/* =========================================
+   Express app
+========================================= */
 const app = express();
 app.set('trust proxy', true);
 
-// Webhook MUST be raw (before json)
+// Stripe webhook MUST come before express.json()
 app.post('/api/checkout-webhook', express.raw({ type: 'application/json' }), async (req, res) => {
-  const sig = req.headers['stripe-signature'];
-  const secret = process.env.STRIPE_WEBHOOK_SECRET;
   let event;
-
   try {
-    event = stripe.webhooks.constructEvent(req.body, sig, secret);
+    const sig = req.headers['stripe-signature'];
+    event = stripe.webhooks.constructEvent(req.body, sig, STRIPE_WEBHOOK_SECRET);
   } catch (err) {
     console.error('Webhook verify failed:', err.message);
     return res.status(400).send(`Webhook Error: ${err.message}`);
@@ -116,38 +47,61 @@ app.post('/api/checkout-webhook', express.raw({ type: 'application/json' }), asy
       case 'checkout.session.completed': {
         const session = event.data.object;
 
-        // Optional: email the shop inbox with a simple summary
-        try {
-          const to = process.env.ORDER_NOTIFY_EMAIL || 'orders@rockcreekgranite.com';
-          const total = (session.amount_total / 100).toFixed(2);
-          const lines = [
-            `Stripe Session: ${session.id}`,
-            `Customer: ${session.customer_details?.email || 'N/A'}`,
-            `Total: $${total} ${String(session.currency || 'usd').toUpperCase()}`,
-          ].join('\n');
-
-          if (mail.transporter) {
-            await sendMail({
-              to,
-              subject: `${process.env.NODE_ENV === 'production' ? '' : '[TEST] '}New RCG order ${session.id}`,
-              text: lines,
-            });
-          } else {
-            console.warn('[MAIL] Skipped order notify email (mailer not configured)');
-          }
-        } catch (e) {
-          console.error('Order notify email failed:', e.message);
-        }
-
+        // Reassemble compact config from metadata
+        const cfg = reassembleCfgFromMeta(session.metadata);
         console.log('[stripe] checkout.session.completed', {
           id: session.id,
           email: session.customer_details?.email,
           amount_total: session.amount_total,
+          cfg_summary: cfg ? { shape: cfg.shape, zip: cfg.zip } : null,
         });
+
+        // Send order emails (fire-and-forget)
+        const userEmail = session.customer_details?.email;
+        const totalUSD = (Number(session.amount_total || 0) / 100).toFixed(2);
+        const currency = String(session.currency || 'usd').toUpperCase();
+
+        const summaryLines = [
+          `Stripe Session: ${session.id}`,
+          `Customer: ${userEmail || 'N/A'}`,
+          `Total: $${totalUSD} ${currency}`,
+          `ZIP: ${cfg?.zip || session.metadata?.zip || 'N/A'}`,
+          `Shape: ${cfg?.shape || 'N/A'}`,
+          `Dims: ${cfg?.dims ? JSON.stringify(cfg.dims) : 'N/A'}`,
+          `Sinks: ${cfg?.sinks?.length || 0}`,
+          `Edges: ${cfg?.edges?.join(', ') || 'None'}`,
+          `Backsplash: ${cfg?.backsplash ? 'Yes' : 'No'}`,
+        ].join('\n');
+
+        // Internal notification
+        safeSendEmail({
+          to: ORDER_NOTIFY_EMAIL,
+          subject: `New RCG order ${session.id}`,
+          text: summaryLines,
+        }).catch(e => console.error('[mail] internal notify failed:', e));
+
+        // Customer confirmation (simple)
+        if (userEmail) {
+          const customerText = [
+            `Thanks for your order!`,
+            ``,
+            `Order: ${session.id}`,
+            `Total: $${totalUSD} ${currency}`,
+            `We'll follow up with next steps shortly.`,
+          ].join('\n');
+
+          safeSendEmail({
+            to: userEmail,
+            subject: 'Rock Creek Granite — Order received',
+            text: customerText,
+          }).catch(e => console.error('[mail] customer confirm failed:', e));
+        }
+
         break;
       }
       default:
-        if (process.env.NODE_ENV !== 'production') console.log(`[stripe] ${event.type}`);
+        // Log other events in non-prod if you like
+        break;
     }
   } catch (e) {
     console.error('Webhook handler error:', e);
@@ -157,10 +111,10 @@ app.post('/api/checkout-webhook', express.raw({ type: 'application/json' }), asy
   res.json({ received: true });
 });
 
-// Now enable CORS & JSON
+// After webhook: CORS + JSON
 const corsOptions = {
   origin(origin, cb) {
-    if (!origin) return cb(null, true);
+    if (!origin) return cb(null, true); // server-to-server
     const ok = ALLOWED_ORIGINS.includes('*') || ALLOWED_ORIGINS.includes(origin);
     cb(ok ? null : new Error('Not allowed by CORS'), ok);
   },
@@ -168,7 +122,9 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json({ limit: '5mb' }));
 
-// -------------------- Pricing helpers (unchanged from your build) --------------------
+/* =========================================
+   Pricing helpers (match client logic)
+========================================= */
 const DOLLARS_PER_SQFT = 55;
 const LBS_PER_SQFT = 10.9;
 const LTL_CWT_BASE = 35.9;
@@ -185,9 +141,9 @@ function areaSqft(shape, d) {
   if (!shape || !d) return 0;
   switch (shape) {
     case 'rectangle': return ((+d.L || 0) * (+d.W || 0)) / 144;
-    case 'circle': { const D = +d.D || 0; return (Math.PI * Math.pow(D/2,2)) / 144; }
+    case 'circle': { const D = +d.D || 0; return (Math.PI * Math.pow(D / 2, 2)) / 144; }
     case 'polygon': {
-      const n = +d.n || 6, s = +d.A || 12;
+      const n = +d.n || 6; const s = +d.A || 12;
       const areaIn2 = (n * s * s) / (4 * Math.tan(Math.PI / n));
       return areaIn2 / 144;
     }
@@ -195,26 +151,27 @@ function areaSqft(shape, d) {
   }
 }
 function distanceBand(originZip, destZip) {
-  const o = parseInt(String(originZip || '63052').slice(0,3),10);
-  const d = parseInt(String(destZip || '00000').slice(0,3),10);
+  const o = parseInt(String(originZip || '63052').slice(0, 3), 10);
+  const d = parseInt(String(destZip || '00000').slice(0, 3), 10);
   const approxMiles = Math.abs(o - d) * 20 + 100;
   return DISTANCE_BANDS.find(b => approxMiles <= b.max).mult;
 }
-function shippingEstimate(area, destZip, originZip='63052') {
+function shippingEstimate(area, destZip, originZip = '63052') {
   const weight = area * LBS_PER_SQFT;
-  const cwt = Math.max(1, Math.ceil(weight/100));
+  const cwt = Math.max(1, Math.ceil(weight / 100));
   const mult = distanceBand(originZip, destZip);
   const base = cwt * LTL_CWT_BASE * mult;
   return { weight, cwt, mult, ltl: base * 1.2 };
 }
 function backsplashSqft(cfg) {
   if (!cfg || cfg.shape !== 'rectangle' || !cfg.backsplash) return 0;
-  const L = +cfg.dims?.L || 0, W = +cfg.dims?.W || 0;
+  const L = +cfg.dims?.L || 0;
+  const W = +cfg.dims?.W || 0;
   const edges = Array.isArray(cfg.edges) ? cfg.edges : [];
-  const unpol = ['top','right','bottom','left'].filter(k => !edges.includes(k));
-  const lenMap = { top:L, bottom:L, left:W, right:W };
-  const areaIn2 = unpol.reduce((sum,k)=> sum + (lenMap[k]||0)*4, 0);
-  return areaIn2/144;
+  const unpol = ['top', 'right', 'bottom', 'left'].filter(k => !edges.includes(k));
+  const lenMap = { top: L, bottom: L, left: W, right: W };
+  const areaIn2 = unpol.reduce((sum, k) => sum + (lenMap[k] || 0) * 4, 0);
+  return areaIn2 / 144;
 }
 function taxRateByZip(zip) {
   if (!/^\d{5}$/.test(zip || '')) return 0.07;
@@ -226,7 +183,7 @@ function computePricing(cfg) {
   const area = areaSqft(cfg?.shape, cfg?.dims);
   const material = area * DOLLARS_PER_SQFT;
   const sinks = cfg?.shape === 'rectangle'
-    ? (cfg?.sinks || []).reduce((acc,s)=> acc + (SINK_PRICES[s.key]||0), 0)
+    ? (cfg?.sinks || []).reduce((acc, s) => acc + (SINK_PRICES[s.key] || 0), 0)
     : 0;
   const bpsf = backsplashSqft(cfg) * DOLLARS_PER_SQFT;
   const ship = shippingEstimate(area + backsplashSqft(cfg), cfg?.zip || '');
@@ -237,7 +194,87 @@ function computePricing(cfg) {
   return { area, material, sinks, backsplash: bpsf, ship, taxRate, tax, total, services };
 }
 
-// -------------------- Stripe: create Checkout Session --------------------
+/* =========================================
+   Metadata helpers (config chunking)
+========================================= */
+function encodeCfgForMeta(obj) {
+  try { return Buffer.from(JSON.stringify(obj), 'utf8').toString('base64'); }
+  catch { return ''; }
+}
+function splitMeta(key, value, chunkSize = 480) {
+  const meta = {};
+  if (!value) return meta;
+  if (value.length <= 500) { meta[key] = value; return meta; }
+  const parts = Math.ceil(value.length / chunkSize);
+  meta[`${key}_parts`] = String(parts);
+  for (let i = 0; i < parts; i++) meta[`${key}_${i + 1}`] = value.slice(i * chunkSize, (i + 1) * chunkSize);
+  return meta;
+}
+function reassembleCfgFromMeta(md) {
+  if (!md) return null;
+  if (md.cfg) {
+    try { return JSON.parse(Buffer.from(md.cfg, 'base64').toString('utf8')); }
+    catch { return null; }
+  }
+  const parts = Number(md.cfg_parts || 0);
+  if (!parts) return null;
+  let joined = '';
+  for (let i = 1; i <= parts; i++) joined += md[`cfg_${i}`] || '';
+  try { return JSON.parse(Buffer.from(joined, 'base64').toString('utf8')); }
+  catch { return null; }
+}
+
+/* =========================================
+   Email via Resend (HTTPS API)
+========================================= */
+// NOTE: Render blocks SMTP ports; use HTTPS email APIs instead. (Resend)
+// https://community.render.com/t/port-25-being-blocked/12331  (Render staff)
+// Resend API reference (attachments supported): https://resend.com/docs/api-reference/emails/send-email
+
+function mailMode() {
+  if (RESEND_API_KEY) return `resend-api`;
+  return 'none';
+}
+console.log(`[MAIL] Mode: ${mailMode()}  From: ${FROM_EMAIL}  As: ${MAIL_FROM_NAME}`);
+
+async function sendEmailViaResend({ to, bcc, subject, text, html, attachments }) {
+  if (!RESEND_API_KEY) throw new Error('Mail not configured');
+  // Resend expects arrays for to/bcc or a single string.
+  const payload = {
+    from: `${MAIL_FROM_NAME} <${FROM_EMAIL}>`,
+    to,
+    bcc,
+    subject,
+    text,
+    html,
+    // attachments: [{ filename, content, contentType }]
+    attachments: Array.isArray(attachments) && attachments.length
+      ? attachments.map(a => ({ filename: a.filename, content: a.content, contentType: a.contentType }))
+      : undefined,
+  };
+  const resp = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const json = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    console.error('[Resend] send failed:', resp.status, json);
+    throw new Error(json?.message || `Resend error ${resp.status}`);
+  }
+  return json;
+}
+
+async function safeSendEmail(opts) {
+  if (mailMode() === 'resend-api') return sendEmailViaResend(opts);
+  throw new Error('Mail not configured');
+}
+
+/* =========================================
+   Routes
+========================================= */
+
+// Create Stripe Checkout Session
 app.post('/api/create-checkout-session', async (req, res) => {
   try {
     const { config, email } = req.body || {};
@@ -269,13 +306,34 @@ app.post('/api/create-checkout-session', async (req, res) => {
       });
     }
 
-    // Compact config into metadata in the future if needed; kept minimal here
+    // Compact config into metadata (no pricing)
+    const compactCfg = {
+      shape: config.shape,
+      dims: config.dims,
+      sinks: Array.isArray(config.sinks)
+        ? config.sinks.map(s => ({
+            key: s.key,
+            x: Number(s.x?.toFixed?.(2) ?? s.x),
+            y: Number(s.y?.toFixed?.(2) ?? s.y),
+            faucet: s.faucet ?? '1',
+            spread: s.spread ?? null,
+          }))
+        : [],
+      color: config.color,
+      edges: Array.isArray(config.edges) ? config.edges : [],
+      backsplash: !!config.backsplash,
+      zip: String(config.zip || ''),
+    };
+    const cfgB64 = encodeCfgForMeta(compactCfg);
+    const metadata = { zip: String(config.zip || ''), ...splitMeta('cfg', cfgB64) };
+
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
       line_items,
       success_url: `${FRONTEND_URL}/thank-you?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${FRONTEND_URL}/configurator?canceled=1`,
       customer_email: email || undefined,
+      metadata,
       shipping_address_collection: { allowed_countries: ['US'] },
     });
 
@@ -286,27 +344,41 @@ app.post('/api/create-checkout-session', async (req, res) => {
   }
 });
 
-// -------------------- Email DXF --------------------
+// Read a Checkout Session for Thank-You page
+app.get('/api/checkout-session', async (req, res) => {
+  try {
+    const id = req.query.id;
+    if (!id) return res.status(400).json({ ok: false, error: 'missing id' });
+    const session = await stripe.checkout.sessions.retrieve(id, {
+      expand: ['line_items', 'payment_intent', 'customer'],
+    });
+    return res.json({ ok: true, session });
+  } catch (e) {
+    console.error('GET /api/checkout-session failed:', e);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Email DXF (uses Resend API)
 app.post('/api/email-dxf', async (req, res) => {
   try {
     const { to, bcc, subject, config, dxfBase64 } = req.body || {};
     if (!to || !dxfBase64) return res.status(400).json({ error: 'Missing to or dxfBase64' });
-    if (!mail.transporter) return res.status(500).json({ error: 'Mail not configured' });
 
-    const buf = Buffer.from(dxfBase64, 'base64');
-    const summary =
-      `Shape: ${config?.shape}\n` +
-      `Size: ${JSON.stringify(config?.dims)}\n` +
-      `Polished: ${Array.isArray(config?.edges) ? config.edges.join(', ') : 'None'}\n` +
-      `Backsplash: ${config?.backsplash ? 'Yes' : 'No'}\n` +
-      `Sinks: ${(config?.sinks || []).length}`;
+    const summary = `Shape: ${config?.shape}
+Size: ${JSON.stringify(config?.dims)}
+Polished: ${Array.isArray(config?.edges) ? config.edges.join(', ') : 'None'}
+Backsplash: ${config?.backsplash ? 'Yes' : 'No'}
+Sinks: ${(config?.sinks || []).length}`;
 
-    await sendMail({
+    await safeSendEmail({
       to,
       bcc,
       subject: subject || 'RCG DXF',
       text: `Attached is your DXF cut sheet.\n\n${summary}`,
-      attachments: [{ filename: 'RCG_CutSheet.dxf', content: buf, contentType: 'application/dxf' }],
+      attachments: [
+        { filename: 'RCG_CutSheet.dxf', content: dxfBase64, contentType: 'application/dxf' },
+      ],
     });
 
     res.json({ ok: true });
@@ -316,28 +388,15 @@ app.post('/api/email-dxf', async (req, res) => {
   }
 });
 
-// -------------------- Utility APIs --------------------
-app.get('/api/checkout-session', async (req, res) => {
-  try {
-    const id = req.query.id;
-    if (!id) return res.status(400).json({ ok: false, error: 'missing id' });
-    const session = await stripe.checkout.sessions.retrieve(id, {
-      expand: ['line_items', 'payment_intent', 'customer']
-    });
-    return res.json({ ok: true, session });
-  } catch (e) {
-    console.error('GET /api/checkout-session failed:', e);
-    res.status(500).json({ ok: false, error: e.message });
-  }
-});
-
-// Health
+/* =========================================
+   Health + Start
+========================================= */
 app.get('/', (_req, res) => res.type('text/plain').send('ok'));
 app.get('/.well-known/health', (_req, res) => res.json({ ok: true, ts: new Date().toISOString() }));
 
-// -------------------- Start --------------------
 console.log('[BOOT] FRONTEND_URL:', FRONTEND_URL);
 console.log('[BOOT] Allowed origins:', ALLOWED_ORIGINS.join(', '));
+
 app.listen(PORT, () => {
   console.log(`Server listening on :${PORT}`);
 });
