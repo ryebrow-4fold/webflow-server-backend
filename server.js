@@ -30,6 +30,42 @@ const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS
   : DEFAULT_ALLOWED
 ).map(s => s.trim()).filter(Boolean);
 
+// --- Lightweight request log for health pings (helps confirm Render is hitting us)
+app.use((req, res, next) => {
+  if (req.path === '/' || req.path === '/healthz' || req.path === '/.well-known/health') {
+    console.log('[HEALTH]', req.method, req.path);
+  }
+  next();
+});
+
+// --- Health endpoints: unprotected, super fast, always 200
+app.get('/healthz', (_req, res) => {
+  res.type('text/plain').send('ok'); // Render can use this path
+});
+
+app.get('/.well-known/health', (_req, res) => {
+  res.json({ ok: true, ts: new Date().toISOString() });
+});
+
+// Keep root simple too — also returns 200 quickly
+app.get('/', (_req, res) => {
+  res.type('text/plain').send('ok');
+});
+
+// --- Diagnostics (optional; handy during setup)
+app.get('/__diag', (_req, res) => {
+  res.json({
+    node: process.version,
+    port: process.env.PORT,
+    env: process.env.NODE_ENV,
+    frontend_url: process.env.FRONTEND_URL,
+    mail_mode: process.env.RESEND_API_KEY ? 'resend-api'
+              : (process.env.SMTP_HOST ? `smtp:${process.env.SMTP_HOST}:${process.env.SMTP_PORT || 'default'}` : 'none'),
+    allowed_origins: (process.env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean),
+    now: new Date().toISOString(),
+  });
+});
+
 // ------------------------- HEALTH & DIAG (place RIGHT AFTER app) -------------------------
 app.get('/.well-known/health', (_req, res) => {
   res.status(200).json({ ok: true, ts: new Date().toISOString() });
