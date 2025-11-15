@@ -1,7 +1,5 @@
-// server.js — Express + Stripe Checkout + Webhook + Email (Resend-first)
-//
-// package.json should include: { "type": "module" }
-// Node 18+ (global fetch is available in Node 18+; you’re on Node 25 on Render)
+// server.js — Express + Stripe Checkout + Webhook + Email (Resend-only, no SMTP)
+// package.json should include: { "type": "module" } and Node >= 18.
 
 process.on('uncaughtException', (err) => {
   console.error('[FATAL] Uncaught exception:', err);
@@ -16,16 +14,11 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import Stripe from 'stripe';
-import nodemailer from 'nodemailer';
 
-// ---------- Small helpers for compact Stripe metadata ----------
+// ---------- Helpers for compact metadata ----------
 function encodeCfgForMeta(obj) {
-  try {
-    const json = JSON.stringify(obj);
-    return Buffer.from(json, 'utf8').toString('base64');
-  } catch {
-    return '';
-  }
+  try { return Buffer.from(JSON.stringify(obj), 'utf8').toString('base64'); }
+  catch { return ''; }
 }
 function splitMeta(key, value, chunkSize = 480) {
   const meta = {};
@@ -50,113 +43,63 @@ function reassembleCfgFromMeta(md) {
   catch { return null; }
 }
 
-// ---------- Env ----------
+// ---------- Env / App ----------
 const PORT = Number(process.env.PORT || 3000);
-const DEFAULT_FRONTEND = 'https://www.rockcreekgranite.com';
-const FRONTEND_URL = process.env.FRONTEND_URL || DEFAULT_FRONTEND;
+const FRONTEND_URL = process.env.FRONTEND_URL || 'https://www.rockcreekgranite.com';
 const DEFAULT_ALLOWED = [FRONTEND_URL, FRONTEND_URL.replace('www.', '')];
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : DEFAULT_ALLOWED)
-  .map(s => s.trim())
-  .filter(Boolean);
+  .map(s => s.trim()).filter(Boolean);
+const COMMIT = (process.env.RENDER_GIT_COMMIT || '').slice(0, 7) || 'local';
 
-// ---------- Stripe ----------
-if (!process.env.STRIPE_SECRET_KEY) console.warn('[WARN] STRIPE_SECRET_KEY not set');
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', { apiVersion: '2024-06-20' });
 
-// ---------- App ----------
 const app = express();
 app.set('trust proxy', true);
 
-// ---------- Mailer (Resend REST first, then SMTP) ----------
+// ---------- Mailer (Resend HTTP API only) ----------
+const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
 const MAIL_FROM = process.env.SMTP_FROM || process.env.BUSINESS_EMAIL || 'orders@rockcreekgranite.com';
 const MAIL_FROM_NAME = process.env.MAIL_FROM_NAME || 'Rock Creek Granite';
 
-function getMailer() {
-  // 1) Resend REST API (recommended)
-  if (process.env.RESEND_API_KEY) {
-    console.log(`[MAIL] Mode: resend-api  From: ${MAIL_FROM}  As: ${MAIL_FROM_NAME}`);
-    return {
-      mode: 'resend-api',
-      async send({ to, bcc, subject, text, attachments }) {
-        const payload = {
-          from: `${MAIL_FROM_NAME} <${MAIL_FROM}>`,
-          to: Array.isArray(to) ? to : [to],
-          subject,
-          text
-        };
-        if (bcc) payload.bcc = Array.isArray(bcc) ? bcc : [bcc];
-        if (attachments?.length) {
-          // Resend expects base64 strings
-          payload.attachments = attachments.map(a => ({
-            filename: a.filename,
-            content: (Buffer.isBuffer(a.content) ? a.content : Buffer.from(a.content))
-              .toString('base64'),
-          }));
-        }
-        const r = await fetch('https://api.resend.com/emails', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
-          },
-          body: JSON.stringify(payload),
-        });
-        if (!r.ok) {
-          const t = await r.text().catch(() => '');
-          throw new Error(`Resend error: ${r.status} ${t}`);
-        }
-      }
+const mailer = {
+  mode: RESEND_API_KEY ? 'resend-api' : 'none',
+  async send({ to, bcc, subject, text, attachments }) {
+    if (!RESEND_API_KEY) throw new Error('Email not configured (RESEND_API_KEY missing)');
+    const payload = {
+      from: `${MAIL_FROM_NAME} <${MAIL_FROM}>`,
+      to: Array.isArray(to) ? to : [to],
+      subject,
+      text,
     };
-  }
-
-  // 2) SMTP (Gmail, etc.) — only if fully configured
-  const SMTP_HOST = process.env.SMTP_HOST;
-  const SMTP_USER = process.env.SMTP_USER;
-  const SMTP_PASS = process.env.SMTP_PASSWORD || process.env.SMTP_PASS;
-  if (SMTP_HOST && SMTP_USER && SMTP_PASS) {
-    const SMTP_PORT = Number(process.env.SMTP_PORT || 587);
-    const SMTP_SECURE = String(process.env.SMTP_SECURE || 'false').toLowerCase() === 'true';
-    console.log(`[MAIL] Mode: smtp:${SMTP_HOST}:${SMTP_PORT}  From: ${MAIL_FROM}  As: ${MAIL_FROM_NAME}`);
-    const transporter = nodemailer.createTransport({
-      host: SMTP_HOST,
-      port: SMTP_PORT,
-      secure: SMTP_SECURE,
-      auth: { user: SMTP_USER, pass: SMTP_PASS },
+    if (bcc) payload.bcc = Array.isArray(bcc) ? bcc : [bcc];
+    if (attachments?.length) {
+      payload.attachments = attachments.map(a => ({
+        filename: a.filename,
+        content: (Buffer.isBuffer(a.content) ? a.content : Buffer.from(a.content)).toString('base64'),
+      }));
+    }
+    const r = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${RESEND_API_KEY}` },
+      body: JSON.stringify(payload),
     });
-    return {
-      mode: 'smtp',
-      async send({ to, bcc, subject, text, attachments }) {
-        await transporter.sendMail({
-          from: `"${MAIL_FROM_NAME}" <${MAIL_FROM}>`,
-          to,
-          bcc,
-          subject,
-          text,
-          attachments
-        });
-      }
-    };
+    if (!r.ok) {
+      const t = await r.text().catch(() => '');
+      throw new Error(`Resend error: ${r.status} ${t}`);
+    }
   }
+};
 
-  console.log('[MAIL] No email provider configured');
-  return {
-    mode: 'none',
-    async send() { throw new Error('Email not configured'); }
-  };
-}
-const mailer = getMailer();
-
-console.log('[BOOT] FRONTEND_URL:', FRONTEND_URL);
+console.log(`[BOOT] commit=${COMMIT}`);
+console.log(`[BOOT] FRONTEND_URL: ${FRONTEND_URL}`);
 console.log('[BOOT] Allowed origins:', ALLOWED_ORIGINS.join(', '));
+console.log(`[MAIL] Mode: ${mailer.mode}  From: ${MAIL_FROM}  As: ${MAIL_FROM_NAME}`);
 
-// ---------- Stripe Webhook (raw body, before express.json) ----------
+// ---------- Webhook (raw body; BEFORE express.json) ----------
 app.post('/api/checkout-webhook', express.raw({ type: 'application/json' }), async (req, res) => {
   const sig = req.headers['stripe-signature'];
   const secret = process.env.STRIPE_WEBHOOK_SECRET;
-  if (!secret) {
-    console.error('[WEBHOOK] STRIPE_WEBHOOK_SECRET not set');
-    return res.status(500).send('Webhook secret missing');
-  }
+  if (!secret) return res.status(500).send('Webhook secret missing');
 
   let event;
   try {
@@ -178,7 +121,7 @@ app.post('/api/checkout-webhook', express.raw({ type: 'application/json' }), asy
           cfg_summary: cfg ? { shape: cfg.shape, zip: cfg.zip } : null,
         });
 
-        // Send a simple order email to your shop inbox
+        // Send internal order email
         try {
           const to = process.env.ORDER_NOTIFY_EMAIL || 'orders@rockcreekgranite.com';
           const total = (session.amount_total / 100).toFixed(2);
@@ -198,7 +141,7 @@ app.post('/api/checkout-webhook', express.raw({ type: 'application/json' }), asy
           await mailer.send({
             to,
             subject: `${subjectPrefix}New RCG order ${session.id}`,
-            text: summaryLines
+            text: summaryLines,
           });
         } catch (e) {
           console.error('Order email failed:', e);
@@ -227,7 +170,7 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json({ limit: '5mb' }));
 
-// ---------- Pricing (mirrors client) ----------
+// ---------- Pricing (mirror of client) ----------
 const DOLLARS_PER_SQFT = 55;
 const LBS_PER_SQFT = 10.9;
 const LTL_CWT_BASE = 35.9;
@@ -300,7 +243,6 @@ app.post('/api/create-checkout-session', async (req, res) => {
     if (!config) return res.status(400).json({ error: 'Missing config' });
 
     const p = computePricing(config);
-
     const line_items = [
       {
         price_data: {
@@ -325,7 +267,6 @@ app.post('/api/create-checkout-session', async (req, res) => {
       });
     }
 
-    // Compact config for metadata (no pricing)
     const compactCfg = {
       shape: config.shape,
       dims: config.dims,
@@ -363,7 +304,7 @@ app.post('/api/create-checkout-session', async (req, res) => {
   }
 });
 
-// ---------- Thank-you page helper ----------
+// ---------- Thank-you helper ----------
 app.get('/api/checkout-session', async (req, res) => {
   try {
     const id = req.query.id;
@@ -378,19 +319,17 @@ app.get('/api/checkout-session', async (req, res) => {
   }
 });
 
-// ---------- Email DXF (uses same mailer) ----------
+// ---------- Email DXF (Resend-only) ----------
 app.post('/api/email-dxf', async (req, res) => {
   try {
     const { to, bcc, subject, config, dxfBase64 } = req.body || {};
     if (!to || !dxfBase64) return res.status(400).json({ error: 'Missing to or dxfBase64' });
-
     const buf = Buffer.from(dxfBase64, 'base64');
     const summary = `Shape: ${config?.shape}
 Size: ${JSON.stringify(config?.dims)}
 Polished: ${Array.isArray(config?.edges) ? config.edges.join(', ') : 'None'}
 Backsplash: ${config?.backsplash ? 'Yes' : 'No'}
 Sinks: ${(config?.sinks || []).length}`;
-
     await mailer.send({
       to,
       bcc,
@@ -398,7 +337,6 @@ Sinks: ${(config?.sinks || []).length}`;
       text: `Attached is your DXF cut sheet.\n\n${summary}`,
       attachments: [{ filename: 'RCG_CutSheet.dxf', content: buf }],
     });
-
     res.json({ ok: true });
   } catch (e) {
     console.error('email-dxf failed:', e);
@@ -406,7 +344,17 @@ Sinks: ${(config?.sinks || []).length}`;
   }
 });
 
-// ---------- Health ----------
+// ---------- Diagnostics ----------
+app.get('/__diag', (_req, res) => {
+  res.json({
+    ok: true,
+    commit: COMMIT,
+    mail_mode: mailer.mode,
+    has_resend_key: !!RESEND_API_KEY,
+    frontend_url: FRONTEND_URL,
+    allowed_origins: ALLOWED_ORIGINS,
+  });
+});
 app.get('/', (_req, res) => res.type('text/plain').send('ok'));
 app.get('/.well-known/health', (_req, res) => res.json({ ok: true, ts: new Date().toISOString() }));
 
@@ -414,4 +362,5 @@ app.get('/.well-known/health', (_req, res) => res.json({ ok: true, ts: new Date(
 app.listen(PORT, () => {
   console.log(`Server listening on :${PORT}`);
 });
+
 
