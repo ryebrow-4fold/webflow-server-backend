@@ -7,6 +7,57 @@ import cors from 'cors';
 import Stripe from 'stripe';
 import nodemailer from 'nodemailer';
 
+// --- Mail config & helper (force Resend API if key is present) ---
+const MAIL_FROM = process.env.SMTP_FROM || process.env.BUSINESS_EMAIL || 'orders@rockcreekgranite.com';
+const MAIL_FROM_NAME = process.env.MAIL_FROM_NAME || 'Rock Creek Granite';
+const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
+
+const MAIL_MODE = RESEND_API_KEY ? 'resend-api' : 'none';
+console.log('[MAIL] Mode:', MAIL_MODE, ' From:', MAIL_FROM, ' As:', MAIL_FROM_NAME);
+
+/**
+ * sendEmail({ to, bcc, subject, text, attachments? })
+ * attachments: [{ filename, content (base64) }]
+ */
+async function sendEmail({ to, bcc, subject, text, attachments = [] }) {
+  if (!RESEND_API_KEY) {
+    throw new Error('RESEND_API_KEY missing; cannot send email via Resend');
+  }
+
+  // Resend HTTP API — no SMTP ports involved
+  const body = {
+    from: `${MAIL_FROM_NAME} <${MAIL_FROM}>`,
+    to: Array.isArray(to) ? to : [to],
+    subject,
+    text,
+  };
+
+  if (bcc) body.bcc = Array.isArray(bcc) ? bcc : [bcc];
+  if (attachments?.length) {
+    // Resend expects base64 content
+    body.attachments = attachments.map(a => ({
+      filename: a.filename,
+      content: a.content, // base64 string
+    }));
+  }
+
+  const resp = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${RESEND_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!resp.ok) {
+    const errTxt = await resp.text().catch(() => '');
+    throw new Error(`Resend API failed: ${resp.status} ${resp.statusText} ${errTxt}`);
+  }
+  const json = await resp.json();
+  return json; // { id: '...' }
+}
+
 // ------------------------- BOOT LOGS -------------------------
 console.log('[BOOT] FRONTEND_URL:', process.env.FRONTEND_URL || '(unset)');
 console.log(
@@ -86,6 +137,15 @@ app.get('/__diag', (_req, res) => {
     frontend_url: process.env.FRONTEND_URL || '(unset)',
     allowed_origins: ALLOWED_ORIGINS,
     mail_mode: mailMode,
+  });
+});
+
+app.get('/__diag', (req, res) => {
+  res.json({
+    mail_mode: MAIL_MODE,
+    from: MAIL_FROM,
+    from_name: MAIL_FROM_NAME,
+    has_resend_key: !!RESEND_API_KEY,
   });
 });
 
@@ -259,68 +319,68 @@ app.post(
     try {
       switch (event.type) {
         case 'checkout.session.completed': {
-          const session = event.data.object;
-          const cfg = reassembleCfgFromMeta(session.metadata);
-          console.log('[stripe] checkout.session.completed', {
-            id: session.id,
-            email: session.customer_details?.email,
-            amount_total: session.amount_total,
-            cfg_summary: cfg ? { shape: cfg.shape, zip: cfg.zip } : null,
-          });
+  const session = event.data.object;
 
-          // Send internal order email (if mailer configured)
-          if (mailer) {
-            try {
-              const to = process.env.ORDER_NOTIFY_EMAIL || process.env.BUSINESS_EMAIL || 'orders@rockcreekgranite.com';
-              const subjectPrefix = process.env.NODE_ENV === 'production' ? '' : '[TEST] ';
-              const total = (session.amount_total / 100).toFixed(2);
+  // (optional) Re-assemble config from metadata if you use splitMeta earlier
+  const meta = session.metadata || {};
+  let cfg = null;
+  try {
+    if (meta.cfg) {
+      cfg = JSON.parse(Buffer.from(meta.cfg, 'base64').toString('utf8'));
+    } else if (meta.cfg_parts) {
+      let joined = '';
+      const parts = Number(meta.cfg_parts || 0);
+      for (let i = 1; i <= parts; i++) joined += meta[`cfg_${i}`] || '';
+      cfg = JSON.parse(Buffer.from(joined, 'base64').toString('utf8'));
+    }
+  } catch { /* ignore */ }
 
-              const summaryLines = [
-                `Stripe Session: ${session.id}`,
-                `Customer: ${session.customer_details?.email || 'N/A'}`,
-                `Total: $${total} ${String(session.currency || 'usd').toUpperCase()}`,
-                `ZIP: ${cfg?.zip || session.metadata?.zip || 'N/A'}`,
-                `Shape: ${cfg?.shape || 'N/A'}`,
-                `Dims: ${cfg?.dims ? JSON.stringify(cfg.dims) : 'N/A'}`,
-                `Sinks: ${cfg?.sinks?.length || 0}`,
-                `Edges: ${cfg?.edges?.join(', ') || 'None'}`,
-                `Backsplash: ${cfg?.backsplash ? 'Yes' : 'No'}`,
-              ].join('\n');
+  const customerEmail = session.customer_details?.email || session.customer_email || null;
+  const totalUSD = (session.amount_total / 100).toFixed(2);
+  const currency = String(session.currency || 'usd').toUpperCase();
 
-              await mailer.sendMail({
-                from: {
-                  name: process.env.MAIL_FROM_NAME || 'RCG',
-                  address: process.env.SMTP_FROM || process.env.BUSINESS_EMAIL || 'no-reply@rockcreekgranite.com',
-                },
-                to,
-                subject: `${subjectPrefix}New RCG order ${session.id}`,
-                text: summaryLines,
-              });
-            } catch (e) {
-              console.error('Order email failed:', e);
-            }
+  const summaryLines = [
+    `Thanks for your order!`,
+    ``,
+    `Order ID: ${session.id}`,
+    `Total: $${totalUSD} ${currency}`,
+    `ZIP: ${cfg?.zip || meta.zip || 'N/A'}`,
+    `Shape: ${cfg?.shape || 'N/A'}`,
+    `Dims: ${cfg?.dims ? JSON.stringify(cfg.dims) : 'N/A'}`,
+    `Sinks: ${cfg?.sinks?.length || 0}`,
+    `Edges: ${cfg?.edges?.join(', ') || 'None'}`,
+    `Backsplash: ${cfg?.backsplash ? 'Yes' : 'No'}`,
+  ].join('\n');
 
-            // Customer confirmation
-            try {
-              const customerEmail = session.customer_details?.email;
-              if (customerEmail) {
-                await mailer.sendMail({
-                  from: {
-                    name: process.env.MAIL_FROM_NAME || 'Rock Creek Granite',
-                    address: process.env.SMTP_FROM || process.env.BUSINESS_EMAIL || 'no-reply@rockcreekgranite.com',
-                  },
-                  to: customerEmail,
-                  subject: 'Thanks for your order — Rock Creek Granite',
-                  text: 'Thanks! We received your order and will follow up with shipping details shortly.',
-                });
-              }
-            } catch (e) {
-              console.error('Customer email failed:', e);
-            }
-          }
+  // 1) Customer confirmation (if we have an email)
+  if (customerEmail) {
+    try {
+      await sendEmail({
+        to: customerEmail,
+        subject: 'Rock Creek Granite — Order Confirmation',
+        text: summaryLines,
+      });
+      console.log('[MAIL] customer confirmation sent to', customerEmail);
+    } catch (e) {
+      console.error('[MAIL] customer confirmation failed:', e);
+    }
+  }
 
-          break;
-        }
+  // 2) Internal order notification
+  const shopInbox = process.env.ORDER_NOTIFY_EMAIL || 'orders@rockcreekgranite.com';
+  try {
+    await sendEmail({
+      to: shopInbox,
+      subject: `New RCG order ${session.id}`,
+      text: summaryLines,
+    });
+    console.log('[MAIL] internal order sent to', shopInbox);
+  } catch (e) {
+    console.error('[MAIL] internal order failed:', e);
+  }
+
+  break;
+}
         default:
           // keep logs in non-prod for visibility
           if (process.env.NODE_ENV !== 'production') console.log(`[stripe] ${event.type}`);
@@ -347,29 +407,25 @@ app.use(express.json({ limit: '5mb' }));
 // ------------------------- API: email-dxf -------------------------
 app.post('/api/email-dxf', async (req, res) => {
   try {
-    if (!mailer) return res.status(500).json({ error: 'Email not configured' });
-
     const { to, bcc, subject, config, dxfBase64 } = req.body || {};
-    if (!to || !dxfBase64) return res.status(400).json({ error: 'Missing to or dxfBase64' });
+    if (!to || !dxfBase64) {
+      return res.status(400).json({ error: 'Missing to or dxfBase64' });
+    }
 
-    const buf = Buffer.from(dxfBase64, 'base64');
-    const summary =
-      `Shape: ${config?.shape}\n` +
-      `Size: ${JSON.stringify(config?.dims)}\n` +
-      `Polished: ${Array.isArray(config?.edges) ? config.edges.join(', ') : 'None'}\n` +
-      `Backsplash: ${config?.backsplash ? 'Yes' : 'No'}\n` +
-      `Sinks: ${(config?.sinks || []).length}`;
+    const summary = [
+      `Shape: ${config?.shape || 'N/A'}`,
+      `Size: ${config?.dims ? JSON.stringify(config.dims) : 'N/A'}`,
+      `Polished: ${Array.isArray(config?.edges) ? config.edges.join(', ') : 'None'}`,
+      `Backsplash: ${config?.backsplash ? 'Yes' : 'No'}`,
+      `Sinks: ${(config?.sinks || []).length}`,
+    ].join('\n');
 
-    await mailer.sendMail({
-      from: {
-        name: process.env.MAIL_FROM_NAME || 'RCG',
-        address: process.env.SMTP_FROM || process.env.BUSINESS_EMAIL || 'no-reply@rockcreekgranite.com',
-      },
+    await sendEmail({
       to,
       bcc,
       subject: subject || 'RCG DXF',
       text: `Attached is your DXF cut sheet.\n\n${summary}`,
-      attachments: [{ filename: 'RCG_CutSheet.dxf', content: buf, contentType: 'application/dxf' }],
+      attachments: [{ filename: 'RCG_CutSheet.dxf', content: dxfBase64 }], // base64
     });
 
     res.json({ ok: true });
