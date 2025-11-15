@@ -336,5 +336,3 @@ app.get('/.well-known/health', (_req, res) => res.json({ ok: true, ts: new Date(
 app.listen(PORT, () => {
   console.log(`Server listening on :${PORT}`);
 });
-
-
