@@ -473,4 +473,3 @@ app.get('/', (_req, res) => res.type('text/plain').send('ok'));
 app.listen(PORT, () => {
   console.log(`Server listening on :${PORT}`);
 });
-
