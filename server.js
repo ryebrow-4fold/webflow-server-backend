@@ -250,78 +250,164 @@ function renderInternalEmailHTML(cfg, session) {
   `;
 }
 
-// ---------------------------- Webhook (raw body first) ------------------------
-app.post('/api/checkout-webhook', express.raw({ type: 'application/json' }), async (req, res) => {
-  const sig = req.headers['stripe-signature'];
-  let event = null;
+// ---------- Stripe Webhook (must stay BEFORE express.json) ----------
+app.post(
+  '/api/checkout-webhook',
+  express.raw({ type: 'application/json' }),
+  async (req, res) => {
+    const sig = req.headers['stripe-signature'];
+    const secret = process.env.STRIPE_WEBHOOK_SECRET;
 
-  // try each configured secret
-  for (const secret of RAW_WEBHOOK_SECRETS) {
+    let event;
     try {
       event = stripe.webhooks.constructEvent(req.body, sig, secret);
-      break;
     } catch (err) {
-      // keep trying others
+      console.error('Webhook verify failed:', err.message);
+      return res.status(400).send(`Webhook Error: ${err.message}`);
     }
-  }
-  if (!event) {
-    console.error('Webhook verify failed for all secrets.');
-    return res.status(400).send('Webhook verification failed');
-  }
 
-  try {
-    switch (event.type) {
-      case 'checkout.session.completed': {
-        const session = event.data.object;
-        const cfg = reassembleCfgFromMeta(session.metadata);
-        console.log('[stripe] checkout.session.completed', {
-          id: session.id,
-          email: session.customer_details?.email,
-          amount_total: session.amount_total,
-          cfg_summary: cfg ? { shape: cfg.shape, zip: cfg.zip } : null,
-        });
+    try {
+      switch (event.type) {
+        case 'checkout.session.completed': {
+          const session = event.data.object;
+          const md = session.metadata || {};
+          const parts = Number(md.cfg_parts || 0);
 
-        // Fire emails (best-effort; don't block the 200)
-        (async () => {
-          try {
-            // Customer confirmation
-            if (session.customer_details?.email && MAIL_MODE === 'resend-api') {
-              await sendEmail({
-                to: session.customer_details.email,
-                bcc: ORDER_NOTIFY_EMAIL, // keep your team in CC
-                subject: 'Rock Creek Granite — Order Confirmed',
-                html: renderCustomerEmailHTML(cfg, session),
-                text: 'Thanks! Your order has been received.',
-              });
-            }
-
-            // Internal notification (always send if possible)
-            if (MAIL_MODE === 'resend-api') {
-              await sendEmail({
-                to: ORDER_NOTIFY_EMAIL,
-                subject: `[RCG] New order ${session.id}`,
-                html: renderInternalEmailHTML(cfg, session),
-                text: `New order ${session.id} — ${session.customer_details?.email || 'N/A'}`,
-              });
-            }
-          } catch (e) {
-            console.error('Order email(s) failed:', e);
+          // Reassemble compact config from metadata
+          let cfgB64 = md.cfg || '';
+          if (!cfgB64 && parts > 0) {
+            let joined = '';
+            for (let i = 1; i <= parts; i++) joined += md[`cfg_${i}`] || '';
+            cfgB64 = joined;
           }
-        })();
+          let config = null;
+          try { config = cfgB64 ? JSON.parse(Buffer.from(cfgB64, 'base64').toString('utf8')) : null; } catch {}
 
-        break;
+          const orderTotalUSD = (session.amount_total / 100).toFixed(2);
+          const orderId = session.id;
+          const customerEmail = session.customer_details?.email || '';
+          const zip = config?.zip || md.zip || '';
+          const dimsTxt = config?.shape === 'rectangle'
+            ? `${config?.dims?.L}" × ${config?.dims?.W}"`
+            : (config?.shape === 'circle'
+                ? `${config?.dims?.D}" Ø`
+                : (config?.shape
+                    ? `${config?.dims?.n}-sides, ${config?.dims?.A}" side`
+                    : 'N/A'));
+
+          // --------- Email templates (simple + branded-friendly) ---------
+          const brandName = process.env.MAIL_FROM_NAME || 'Rock Creek Granite';
+
+          const internalSubject = `${process.env.NODE_ENV === 'production' ? '' : '[TEST] '}Order confirmed — ${orderId}`;
+          const internalHtml = `
+            <div style="font-family:Arial,Helvetica,sans-serif;max-width:640px;margin:0 auto;padding:16px;color:#111;">
+              <h2 style="margin:0 0 12px;">${brandName} — New Order</h2>
+              <p style="margin:0 0 10px;">A new order has been confirmed in Stripe Checkout.</p>
+              <table style="border-collapse:collapse;width:100%;margin-top:8px;">
+                <tr><td style="padding:6px 0;"><strong>Stripe Session</strong></td><td style="padding:6px 0;">${orderId}</td></tr>
+                <tr><td style="padding:6px 0;"><strong>Customer</strong></td><td style="padding:6px 0;">${customerEmail || 'N/A'}</td></tr>
+                <tr><td style="padding:6px 0;"><strong>Total</strong></td><td style="padding:6px 0;">$${orderTotalUSD} ${String(session.currency || 'usd').toUpperCase()}</td></tr>
+                <tr><td style="padding:6px 0;"><strong>ZIP</strong></td><td style="padding:6px 0;">${zip || 'N/A'}</td></tr>
+                <tr><td style="padding:6px 0;"><strong>Shape</strong></td><td style="padding:6px 0;">${config?.shape || 'N/A'}</td></tr>
+                <tr><td style="padding:6px 0;"><strong>Size</strong></td><td style="padding:6px 0;">${dimsTxt}</td></tr>
+                <tr><td style="padding:6px 0;"><strong>Sinks</strong></td><td style="padding:6px 0;">${config?.sinks?.length || 0}</td></tr>
+                <tr><td style="padding:6px 0;"><strong>Edges</strong></td><td style="padding:6px 0;">${Array.isArray(config?.edges) ? config.edges.join(', ') : 'None'}</td></tr>
+                <tr><td style="padding:6px 0;"><strong>Backsplash</strong></td><td style="padding:6px 0;">${config?.backsplash ? 'Yes' : 'No'}</td></tr>
+              </table>
+            </div>
+          `;
+          const internalText =
+            `New order confirmed\n\n` +
+            `Stripe Session: ${orderId}\n` +
+            `Customer: ${customerEmail || 'N/A'}\n` +
+            `Total: $${orderTotalUSD} ${String(session.currency || 'usd').toUpperCase()}\n` +
+            `ZIP: ${zip || 'N/A'}\n` +
+            `Shape: ${config?.shape || 'N/A'}\n` +
+            `Size: ${dimsTxt}\n` +
+            `Sinks: ${config?.sinks?.length || 0}\n` +
+            `Edges: ${Array.isArray(config?.edges) ? config.edges.join(', ') : 'None'}\n` +
+            `Backsplash: ${config?.backsplash ? 'Yes' : 'No'}\n`;
+
+          const customerSubject = `${process.env.NODE_ENV === 'production' ? '' : '[TEST] '}Thanks! We received your order`;
+          const customerHtml = `
+            <div style="font-family:Arial,Helvetica,sans-serif;max-width:640px;margin:0 auto;padding:16px;color:#111;">
+              <h2 style="margin:0 0 12px;">Thanks — Payment received!</h2>
+              <p style="margin:0 0 10px;">We’re getting started on your custom countertop. Here’s a quick summary:</p>
+              <table style="border-collapse:collapse;width:100%;margin-top:8px;">
+                <tr><td style="padding:6px 0;"><strong>Order #</strong></td><td style="padding:6px 0;">${orderId}</td></tr>
+                <tr><td style="padding:6px 0;"><strong>Total</strong></td><td style="padding:6px 0;">$${orderTotalUSD} ${String(session.currency || 'usd').toUpperCase()}</td></tr>
+                <tr><td style="padding:6px 0;"><strong>Ship ZIP</strong></td><td style="padding:6px 0;">${zip || 'N/A'}</td></tr>
+                <tr><td style="padding:6px 0;"><strong>Shape</strong></td><td style="padding:6px 0;">${config?.shape || 'N/A'}</td></tr>
+                <tr><td style="padding:6px 0;"><strong>Size</strong></td><td style="padding:6px 0;">${dimsTxt}</td></tr>
+                <tr><td style="padding:6px 0;"><strong>Sinks</strong></td><td style="padding:6px 0;">${config?.sinks?.length || 0}</td></tr>
+                <tr><td style="padding:6px 0;"><strong>Backsplash</strong></td><td style="padding:6px 0;">${config?.backsplash ? 'Yes' : 'No'}</td></tr>
+              </table>
+              <p style="margin-top:12px;">You’ll get another update as soon as your order moves into fabrication.</p>
+              <p style="margin:0;color:#666;">– ${brandName}</p>
+            </div>
+          `;
+          const customerText =
+            `Thanks — we received your order!\n\n` +
+            `Order #: ${orderId}\n` +
+            `Total: $${orderTotalUSD} ${String(session.currency || 'usd').toUpperCase()}\n` +
+            `Ship ZIP: ${zip || 'N/A'}\n` +
+            `Shape: ${config?.shape || 'N/A'}\n` +
+            `Size: ${dimsTxt}\n` +
+            `Sinks: ${config?.sinks?.length || 0}\n` +
+            `Backsplash: ${config?.backsplash ? 'Yes' : 'No'}\n\n` +
+            `We’ll email again when your order moves into fabrication.\n`;
+
+          // Send internal email
+          try {
+            await sendEmail({
+              to: process.env.ORDER_NOTIFY_EMAIL || process.env.BUSINESS_EMAIL,
+              subject: internalSubject,
+              html: internalHtml,
+              text: internalText
+            });
+          } catch (e) {
+            console.error('Internal order email failed:', e);
+          }
+
+          // Send customer email
+          if (customerEmail) {
+            try {
+              await sendEmail({
+                to: customerEmail,
+                subject: customerSubject,
+                html: customerHtml,
+                text: customerText
+              });
+            } catch (e) {
+              console.error('Customer email failed:', e);
+            }
+          }
+
+          // Log a concise summary
+          console.log('[stripe] checkout.session.completed', {
+            id: orderId,
+            email: customerEmail,
+            amount_total: session.amount_total,
+            cfg_summary: config ? { shape: config.shape, zip: zip } : null
+          });
+
+          break;
+        }
+
+        default: {
+          if (process.env.NODE_ENV !== 'production') {
+            console.log(`[stripe] ${event.type}`);
+          }
+        }
       }
-      default: {
-        // Log other events in non-prod if you want
-        break;
-      }
+    } catch (e) {
+      console.error('Webhook handler error:', e);
+      return res.sendStatus(500);
     }
-  } catch (e) {
-    console.error('Webhook handler error:', e);
-    return res.sendStatus(500);
+
+    res.json({ received: true });
   }
-  res.json({ received: true });
-});
+);
 
 // ---------------------------- CORS + JSON (after webhook) ---------------------
 const corsOptions = {
