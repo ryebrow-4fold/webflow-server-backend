@@ -33,20 +33,16 @@ const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || '';
 if (!STRIPE_SECRET_KEY) console.warn('[WARN] STRIPE_SECRET_KEY not set');
 const stripe = new Stripe(STRIPE_SECRET_KEY, { apiVersion: '2024-06-20' });
 
-// Webhook secret(s) (support comma-separated)
-const RAW_WEBHOOK_SECRETS = (process.env.STRIPE_WEBHOOK_SECRET || '').split(',').map(s => s.trim()).filter(Boolean);
-if (RAW_WEBHOOK_SECRETS.length === 0) console.warn('[WARN] STRIPE_WEBHOOK_SECRET not set');
+// Webhook secret (single; if you need multiple endpoints, comma-separate and match yourself)
+if (!process.env.STRIPE_WEBHOOK_SECRET) console.warn('[WARN] STRIPE_WEBHOOK_SECRET not set');
 
-// Resend (mail) — HTTP API only (no SMTP)
+// Resend (mail) — HTTP API only (no SMTP in this file)
 const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
 const MAIL_FROM = process.env.SMTP_FROM || process.env.BUSINESS_EMAIL || 'orders@rockcreekgranite.com';
 const MAIL_FROM_NAME = process.env.MAIL_FROM_NAME || 'Rock Creek Granite';
 const MAIL_MODE = RESEND_API_KEY ? 'resend-api' : 'none';
-
-// Order inbox
 const ORDER_NOTIFY_EMAIL = process.env.ORDER_NOTIFY_EMAIL || 'orders@rockcreekgranite.com';
 
-// App
 const app = express();
 app.set('trust proxy', true);
 
@@ -149,13 +145,14 @@ function reassembleCfgFromMeta(md) {
 
 // ---------------------------- Mail (Resend HTTP) ------------------------------
 /**
- * sendEmail({ to, bcc, subject, text, html, attachments? })
+ * sendEmail({ to, subject, html, text, attachments? })
  * attachments: [{ filename, content (base64) }]
  */
-async function sendEmail({ to, bcc, subject, text, html, attachments=[] }) {
+async function sendEmail({ to, subject, text, html, attachments = [], bcc }) {
   if (MAIL_MODE !== 'resend-api') {
     throw new Error('RESEND_API_KEY missing; cannot send email');
   }
+
   const body = {
     from: `${MAIL_FROM_NAME} <${MAIL_FROM}>`,
     to: Array.isArray(to) ? to : [to],
@@ -163,9 +160,9 @@ async function sendEmail({ to, bcc, subject, text, html, attachments=[] }) {
     ...(text ? { text } : {}),
     ...(html ? { html } : {}),
     ...(bcc ? { bcc: Array.isArray(bcc) ? bcc : [bcc] } : {}),
-    ...(attachments.length ? {
-      attachments: attachments.map(a => ({ filename: a.filename, content: a.content }))
-    } : {}),
+    ...(attachments.length
+      ? { attachments: attachments.map(a => ({ filename: a.filename, content: a.content })) }
+      : {}),
   };
 
   const resp = await fetch('https://api.resend.com/emails', {
@@ -178,7 +175,7 @@ async function sendEmail({ to, bcc, subject, text, html, attachments=[] }) {
   });
 
   if (!resp.ok) {
-    const errTxt = await resp.text().catch(()=> '');
+    const errTxt = await resp.text().catch(() => '');
     throw new Error(`Resend API failed: ${resp.status} ${resp.statusText} ${errTxt}`);
   }
   return resp.json();
@@ -293,105 +290,35 @@ app.post(
           const currency = String(session.currency || 'usd').toUpperCase();
           const customerEmail = session.customer_details?.email || '';
           const customerName = session.customer_details?.name || '';
-          const zip = config?.zip || md.zip || '';
 
-          const dimsTxt =
-            config?.shape === 'rectangle'
-              ? `${config?.dims?.L}" × ${config?.dims?.W}"`
-              : config?.shape === 'circle'
-              ? `${config?.dims?.D}" Ø`
-              : config?.shape
-              ? `${config?.dims?.n}-sides, ${config?.dims?.A}" side`
-              : 'N/A';
-
-          const brandName = process.env.MAIL_FROM_NAME || 'Rock Creek Granite';
-
-          // ================== INTERNAL EMAIL (to orders@) ==================
-          const internalSubject = `${process.env.NODE_ENV === 'production' ? '' : '[TEST] '}Order confirmed — ${orderId}`;
-          const internalHtml = `
-            <div style="font-family:Arial,Helvetica,sans-serif;max-width:640px;margin:0 auto;padding:16px;color:#111;">
-              <h2 style="margin:0 0 12px;">${brandName} — New Order</h2>
-              <p style="margin:0 0 10px;">A new order has been confirmed in Stripe Checkout.</p>
-              <table style="border-collapse:collapse;width:100%;margin-top:8px;">
-                <tr><td style="padding:6px 0;"><strong>Stripe Session</strong></td><td style="padding:6px 0;">${orderId}</td></tr>
-                <tr><td style="padding:6px 0;"><strong>Customer</strong></td><td style="padding:6px 0;">${customerEmail || 'N/A'}</td></tr>
-                <tr><td style="padding:6px 0;"><strong>Total</strong></td><td style="padding:6px 0;">$${orderTotalUSD} ${currency}</td></tr>
-                <tr><td style="padding:6px 0;"><strong>ZIP</strong></td><td style="padding:6px 0;">${zip || 'N/A'}</td></tr>
-                <tr><td style="padding:6px 0;"><strong>Shape</strong></td><td style="padding:6px 0;">${config?.shape || 'N/A'}</td></tr>
-                <tr><td style="padding:6px 0;"><strong>Size</strong></td><td style="padding:6px 0;">${dimsTxt}</td></tr>
-                <tr><td style="padding:6px 0;"><strong>Sinks</strong></td><td style="padding:6px 0;">${config?.sinks?.length || 0}</td></tr>
-                <tr><td style="padding:6px 0;"><strong>Edges</strong></td><td style="padding:6px 0;">${Array.isArray(config?.edges) ? config.edges.join(', ') : 'None'}</td></tr>
-                <tr><td style="padding:6px 0;"><strong>Backsplash</strong></td><td style="padding:6px 0;">${config?.backsplash ? 'Yes' : 'No'}</td></tr>
-              </table>
-            </div>
-          `;
-          const internalText =
-            `New order confirmed\n\n` +
-            `Stripe Session: ${orderId}\n` +
-            `Customer: ${customerEmail || 'N/A'}\n` +
-            `Total: $${orderTotalUSD} ${currency}\n` +
-            `ZIP: ${zip || 'N/A'}\n` +
-            `Shape: ${config?.shape || 'N/A'}\n` +
-            `Size: ${dimsTxt}\n` +
-            `Sinks: ${config?.sinks?.length || 0}\n` +
-            `Edges: ${Array.isArray(config?.edges) ? config.edges.join(', ') : 'None'}\n` +
-            `Backsplash: ${config?.backsplash ? 'Yes' : 'No'}\n`;
-
+          // ================== INTERNAL EMAIL ==================
           try {
             await sendEmail({
-              to: process.env.ORDER_NOTIFY_EMAIL || process.env.BUSINESS_EMAIL,
-              subject: internalSubject,
-              html: internalHtml,
-              text: internalText
+              to: ORDER_NOTIFY_EMAIL,
+              subject: `${process.env.NODE_ENV === 'production' ? '' : '[TEST] '}Order confirmed — ${orderId}`,
+              html: renderInternalEmailHTML(config, session),
+              text:
+                `New order confirmed\n\n` +
+                `Stripe Session: ${orderId}\n` +
+                `Customer: ${customerEmail || 'N/A'}\n` +
+                `Total: $${orderTotalUSD} ${currency}\n`
             });
             console.log('[mail] internal order email sent');
           } catch (e) {
             console.error('[mail] internal order email failed:', e);
           }
 
-          // ================== CUSTOMER EMAIL (if we have an email) ==================
+          // ================== CUSTOMER EMAIL ==================
           if (customerEmail) {
-            const customerSubject = `${process.env.NODE_ENV === 'production' ? '' : '[TEST] '}Thanks! We received your order — ${orderId}`;
-            const customerHtml = `
-              <div style="font-family:Arial, sans-serif; max-width:640px; margin:0 auto; color:#111">
-                <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse">
-                  <tr><td style="padding:18px 0; text-align:center;">
-                    <div style="font-size:22px;font-weight:700;">${brandName}</div>
-                  </td></tr>
-                  <tr><td style="padding:16px; background:#f7f7f5;">
-                    <h1 style="margin:0 0 12px;font-size:18px;">Order received</h1>
-                    <p style="margin:0 0 8px;">Hi${customerName ? ` ${customerName}` : ''}, thanks for your order!</p>
-                    <p style="margin:0 0 8px;">We’ve started processing it and will be in touch with next steps.</p>
-                    <p style="margin:0 0 6px;"><strong>Order ID:</strong> ${orderId}</p>
-                    <p style="margin:0 0 6px;"><strong>Total:</strong> $${orderTotalUSD} ${currency}</p>
-                    <p style="margin:0 0 6px;"><strong>Ship ZIP:</strong> ${zip || 'N/A'}</p>
-                    <p style="margin:0 0 6px;"><strong>Shape:</strong> ${config?.shape || 'N/A'}</p>
-                    <p style="margin:0 0 6px;"><strong>Size:</strong> ${dimsTxt}</p>
-                    <p style="margin:0 0 6px;"><strong>Sinks:</strong> ${config?.sinks?.length || 0}</p>
-                    <p style="margin:0 0 6px;"><strong>Backsplash:</strong> ${config?.backsplash ? 'Yes' : 'No'}</p>
-                    <p style="margin:10px 0 0;">Questions? Reply to this email or write <a href="mailto:${process.env.ORDER_NOTIFY_EMAIL || 'orders@rockcreekgranite.com'}">${process.env.ORDER_NOTIFY_EMAIL || 'orders@rockcreekgranite.com'}</a>.</p>
-                  </td></tr>
-                  <tr><td style="padding:10px; text-align:center; font-size:12px; color:#666;">© ${brandName}</td></tr>
-                </table>
-              </div>
-            `;
-            const customerText =
-              `Thanks — we received your order!\n\n` +
-              `Order #: ${orderId}\n` +
-              `Total: $${orderTotalUSD} ${currency}\n` +
-              `Ship ZIP: ${zip || 'N/A'}\n` +
-              `Shape: ${config?.shape || 'N/A'}\n` +
-              `Size: ${dimsTxt}\n` +
-              `Sinks: ${config?.sinks?.length || 0}\n` +
-              `Backsplash: ${config?.backsplash ? 'Yes' : 'No'}\n\n` +
-              `We’ll email again when your order moves into fabrication.\n`;
-
             try {
               await sendEmail({
                 to: customerEmail,
-                subject: customerSubject,
-                html: customerHtml,
-                text: customerText
+                subject: `${process.env.NODE_ENV === 'production' ? '' : '[TEST] '}Thanks! We received your order — ${orderId}`,
+                html: renderCustomerEmailHTML(config, session),
+                text:
+                  `Thanks — we received your order!\n\n` +
+                  `Order #: ${orderId}\n` +
+                  `Total: $${orderTotalUSD} ${currency}\n`
               });
               console.log('[mail] customer email sent ->', customerEmail);
             } catch (e) {
@@ -406,7 +333,7 @@ app.post(
             id: orderId,
             email: customerEmail,
             amount_total: session.amount_total,
-            cfg_summary: config ? { shape: config.shape, zip } : null
+            cfg_summary: config ? { shape: config.shape, zip: config?.zip || md.zip || '' } : null
           });
 
           break;
@@ -524,27 +451,62 @@ app.get('/api/checkout-session', async (req, res) => {
   }
 });
 
-// ---------------------------- API: Email DXF (Resend) -------------------------
+// --------- Email DXF (uses sendEmail helper) ---------
 app.post('/api/email-dxf', async (req, res) => {
   try {
     const { to, bcc, subject, config, dxfBase64 } = req.body || {};
-    if (!to || !dxfBase64) return res.status(400).json({ error: 'Missing to or dxfBase64' });
+    if (!to || !dxfBase64) {
+      return res.status(400).json({ error: 'Missing to or dxfBase64' });
+    }
 
-    // small summary for body
-    const summary = `Shape: ${config?.shape}
-Size: ${JSON.stringify(config?.dims)}
-Polished: ${Array.isArray(config?.edges) ? config.edges.join(', ') : 'None'}
-Backsplash: ${config?.backsplash ? 'Yes' : 'No'}
-Sinks: ${(config?.sinks || []).length}`;
+    const brand = MAIL_FROM_NAME || 'Rock Creek Granite';
+    const dimsTxt =
+      config?.shape === 'rectangle'
+        ? `${config?.dims?.L}" × ${config?.dims?.W}"`
+        : config?.shape === 'circle'
+        ? `${config?.dims?.D}" Ø`
+        : (config?.shape
+            ? `${config?.dims?.n}-sides, ${config?.dims?.A}" side`
+            : 'N/A');
 
+    const html = `
+      <div style="font-family:Arial,Helvetica,sans-serif;max-width:640px;margin:0 auto;padding:16px;color:#111;">
+        <h2 style="margin:0 0 12px;">${brand} — DXF attached</h2>
+        <p style="margin:0 0 10px;">Auto-generated DXF cut sheet is attached.</p>
+        <ul style="margin:0;padding-left:16px">
+          <li>Shape: ${config?.shape || 'N/A'}</li>
+          <li>Size: ${dimsTxt}</li>
+        </ul>
+      </div>`;
+    const text = `DXF attached.\nShape: ${config?.shape || 'N/A'}\nSize: ${dimsTxt}\n`;
+
+    const att = { filename: 'RCG_CutSheet.dxf', content: dxfBase64 }; // base64 string
+
+    // primary recipient
     await sendEmail({
       to,
-      bcc,
       subject: subject || 'RCG DXF',
-      text: `Attached is your DXF cut sheet.\n\n${summary}`,
-      html: `<pre style="font-family:monospace;white-space:pre-wrap">${summary}</pre>`,
-      attachments: [{ filename: 'RCG_CutSheet.dxf', content: dxfBase64 }],
+      html,
+      text,
+      attachments: [att]
     });
+    console.log('[mail] DXF email sent ->', to);
+
+    // optional bcc as separate send (Resend handles bcc too, but separate ensures logs)
+    if (bcc) {
+      try {
+        await sendEmail({
+          to: bcc,
+          subject: subject || 'RCG DXF (copy)',
+          html,
+          text,
+          attachments: [att]
+        });
+        console.log('[mail] DXF email (bcc) sent ->', bcc);
+      } catch (e) {
+        console.error('[mail] DXF email bcc failed:', e);
+      }
+    }
 
     res.json({ ok: true });
   } catch (e) {
@@ -572,6 +534,7 @@ app.get('/.well-known/mail-debug', async (req, res) => {
 });
 
 app.get('/.well-known/health', (_req, res) => res.json({ ok: true, ts: new Date().toISOString() }));
+app.get('/healthz', (_req, res) => res.json({ ok: true, ts: new Date().toISOString() })); // extra, in case Render points here
 app.get('/', (_req, res) => res.type('text/plain').send('ok'));
 
 // ---------------------------- Start -------------------------------------------
