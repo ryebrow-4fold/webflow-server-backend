@@ -143,6 +143,52 @@ function reassembleCfgFromMeta(md) {
   catch { return null; }
 }
 
+// --- Minimal DXF attachment helper (fallback if client DXF is not provided) ---
+function makeDxfAttachmentFromConfig(cfg) {
+  try {
+    // Build an ultra-minimal DXF that at least opens and shows a summary text
+    const labelParts = [
+      `RCG ORDER`,
+      `Shape: ${cfg?.shape || 'N/A'}`,
+      `Dims: ${cfg?.shape === 'rectangle'
+        ? `${cfg?.dims?.L}" x ${cfg?.dims?.W}"`
+        : (cfg?.shape === 'circle'
+            ? `${cfg?.dims?.D}" Ø`
+            : (cfg?.shape
+                ? `${cfg?.dims?.n}-sides, ${cfg?.dims?.A}" side`
+                : 'N/A'))}`,
+      `Sinks: ${(cfg?.sinks || []).length}`,
+      `Edges: ${(cfg?.edges || []).join(', ') || 'None'}`,
+      `Backsplash: ${cfg?.backsplash ? 'Yes' : 'No'}`
+    ].join('  |  ');
+
+    // Super small valid DXF with one TEXT entity
+    const dxfLines = [
+      '0','SECTION',
+      '2','HEADER',
+      '0','ENDSEC',
+      '0','SECTION',
+      '2','ENTITIES',
+      '0','TEXT',
+      '8','0',       // layer
+      '10','0',      // x
+      '20','0',      // y
+      '40','12',     // height
+      '1', labelParts, // text string
+      '0','ENDSEC',
+      '0','EOF'
+    ];
+    const dxf = dxfLines.join('\n');
+    return {
+      filename: 'RCG_CutSheet.dxf',
+      content: Buffer.from(dxf, 'utf8').toString('base64') // base64 for Resend attachments
+    };
+  } catch {
+    return null;
+  }
+}
+
+
 // ---------------------------- Mail (Resend HTTP) ------------------------------
 /**
  * sendEmail({ to, bcc, subject, text, html, attachments?, replyTo? })
@@ -306,6 +352,8 @@ app.post(
             config = null;
           }
 
+          
+
           // -------- Friendly fields for emails --------
           const orderId = session.id;
           const orderTotalUSD = (session.amount_total / 100).toFixed(2);
@@ -315,20 +363,22 @@ app.post(
 
           // ================== INTERNAL EMAIL ==================
           try {
-            await sendEmail({
-              to: ORDER_NOTIFY_EMAIL,
-              subject: `${process.env.NODE_ENV === 'production' ? '' : '[TEST] '}Order confirmed — ${orderId}`,
-              html: renderInternalEmailHTML(config, session),
-              text:
-                `New order confirmed\n\n` +
-                `Stripe Session: ${orderId}\n` +
-                `Customer: ${customerEmail || 'N/A'}\n` +
-                `Total: $${orderTotalUSD} ${currency}\n`
-            });
-            console.log('[mail] internal order email sent');
-          } catch (e) {
-            console.error('[mail] internal order email failed:', e);
-          }
+  // If the client didn’t POST a DXF via /api/email-dxf, we still attach a tiny fallback
+  const dxfAttachment = makeDxfAttachmentFromConfig(config); // safe even if config is null
+
+  await sendEmail({
+    to: process.env.ORDER_NOTIFY_EMAIL || process.env.BUSINESS_EMAIL,
+    subject: internalSubject,
+    html: internalHtml,
+    text: internalText,
+    attachments: dxfAttachment ? [dxfAttachment] : []  // attach if available
+  });
+
+  console.log('[mail] internal order email sent', dxfAttachment ? 'with DXF' : '(no DXF)');
+} catch (e) {
+  console.error('[mail] internal order email failed:', e);
+}
+
 
           // ================== CUSTOMER EMAIL ==================
           if (customerEmail) {
