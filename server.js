@@ -1,5 +1,5 @@
 // server.js — Express + Stripe Checkout + Webhook + Resend email (ESM)
-// Requires package.json: { "type": "module" }
+// Requires package.json: { "type": "module" } and Node >= 18
 
 import 'dotenv/config';
 import express from 'express';
@@ -33,16 +33,18 @@ const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || '';
 if (!STRIPE_SECRET_KEY) console.warn('[WARN] STRIPE_SECRET_KEY not set');
 const stripe = new Stripe(STRIPE_SECRET_KEY, { apiVersion: '2024-06-20' });
 
-// Webhook secret (single; if you need multiple endpoints, comma-separate and match yourself)
-if (!process.env.STRIPE_WEBHOOK_SECRET) console.warn('[WARN] STRIPE_WEBHOOK_SECRET not set');
+// Webhook secret (single)
+const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || '';
+if (!STRIPE_WEBHOOK_SECRET) console.warn('[WARN] STRIPE_WEBHOOK_SECRET not set');
 
-// Resend (mail) — HTTP API only (no SMTP in this file)
+// Resend (mail) — HTTP API only
 const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
 const MAIL_FROM = process.env.SMTP_FROM || process.env.BUSINESS_EMAIL || 'orders@rockcreekgranite.com';
 const MAIL_FROM_NAME = process.env.MAIL_FROM_NAME || 'Rock Creek Granite';
 const MAIL_MODE = RESEND_API_KEY ? 'resend-api' : 'none';
 const ORDER_NOTIFY_EMAIL = process.env.ORDER_NOTIFY_EMAIL || 'orders@rockcreekgranite.com';
 
+// App
 const app = express();
 app.set('trust proxy', true);
 
@@ -146,7 +148,6 @@ function reassembleCfgFromMeta(md) {
 // --- Minimal DXF attachment helper (fallback if client DXF is not provided) ---
 function makeDxfAttachmentFromConfig(cfg) {
   try {
-    // Build an ultra-minimal DXF that at least opens and shows a summary text
     const labelParts = [
       `RCG ORDER`,
       `Shape: ${cfg?.shape || 'N/A'}`,
@@ -162,7 +163,6 @@ function makeDxfAttachmentFromConfig(cfg) {
       `Backsplash: ${cfg?.backsplash ? 'Yes' : 'No'}`
     ].join('  |  ');
 
-    // Super small valid DXF with one TEXT entity
     const dxfLines = [
       '0','SECTION',
       '2','HEADER',
@@ -170,11 +170,11 @@ function makeDxfAttachmentFromConfig(cfg) {
       '0','SECTION',
       '2','ENTITIES',
       '0','TEXT',
-      '8','0',       // layer
-      '10','0',      // x
-      '20','0',      // y
-      '40','12',     // height
-      '1', labelParts, // text string
+      '8','0',
+      '10','0',
+      '20','0',
+      '40','12',
+      '1', labelParts,
       '0','ENDSEC',
       '0','EOF'
     ];
@@ -188,7 +188,6 @@ function makeDxfAttachmentFromConfig(cfg) {
   }
 }
 
-
 // ---------------------------- Mail (Resend HTTP) ------------------------------
 /**
  * sendEmail({ to, bcc, subject, text, html, attachments?, replyTo? })
@@ -199,16 +198,11 @@ async function sendEmail({ to, bcc, subject, text, html, attachments = [], reply
     throw new Error('RESEND_API_KEY missing; cannot send email');
   }
 
-  // enforce proper "to" formatting for Resend validation
   const toList = Array.isArray(to) ? to : [to];
-  const clean = (s) => String(s || '').trim();
   const formattedTo = toList
     .filter(Boolean)
-    .map(addr => {
-      // Support "Name <email@...>" or just "email@..."
-      return /<.+@.+>/.test(addr) || /.+@.+\..+/.test(addr) ? addr : null;
-    })
-    .filter(Boolean);
+    .map(addr => String(addr).trim())
+    .filter(addr => /<.+@.+>/.test(addr) || /.+@.+\..+/.test(addr));
 
   if (!formattedTo.length) {
     throw new Error('Invalid "to" field; must be "email@example.com" or "Name <email@example.com>"');
@@ -225,7 +219,6 @@ async function sendEmail({ to, bcc, subject, text, html, attachments = [], reply
     ...(attachments.length
       ? { attachments: attachments.map(a => ({ filename: a.filename, content: a.content })) }
       : {}),
-    // Deliverability niceties:
     headers: {
       'List-Unsubscribe': `<mailto:${ORDER_NOTIFY_EMAIL}>`,
     },
@@ -247,7 +240,6 @@ async function sendEmail({ to, bcc, subject, text, html, attachments = [], reply
   }
   return resp.json();
 }
-
 
 // ---------------------------- Tiny HTML templates -----------------------------
 function renderCustomerEmailHTML(cfg, session) {
@@ -315,17 +307,32 @@ function renderInternalEmailHTML(cfg, session) {
   `;
 }
 
+function renderInternalEmailText(cfg, session) {
+  const money = v => `$${(v/100).toFixed(2)}`;
+  return [
+    `Stripe Session: ${session.id}`,
+    `Customer: ${session.customer_details?.email || 'N/A'}`,
+    `Total: ${money(session.amount_total || 0)} ${String(session.currency || 'usd').toUpperCase()}`,
+    `ZIP: ${cfg?.zip || 'N/A'}`,
+    `Shape: ${cfg?.shape || 'N/A'}`,
+    `Dims: ${cfg?.dims ? JSON.stringify(cfg.dims) : 'N/A'}`,
+    `Sinks: ${(cfg?.sinks || []).length}`,
+    `Edges: ${(cfg?.edges || []).join(', ') || 'None'}`,
+    `Backsplash: ${cfg?.backsplash ? 'Yes' : 'No'}`,
+    `Color: ${cfg?.color || 'N/A'}`
+  ].join('\n');
+}
+
 // ---------- Stripe Webhook (must stay BEFORE express.json) ----------
 app.post(
   '/api/checkout-webhook',
   express.raw({ type: 'application/json' }),
   async (req, res) => {
     const sig = req.headers['stripe-signature'];
-    const secret = process.env.STRIPE_WEBHOOK_SECRET;
 
     let event;
     try {
-      event = stripe.webhooks.constructEvent(req.body, sig, secret);
+      event = stripe.webhooks.constructEvent(req.body, sig, STRIPE_WEBHOOK_SECRET);
     } catch (err) {
       console.error('Webhook verify failed:', err.message);
       return res.status(400).send(`Webhook Error: ${err.message}`);
@@ -352,45 +359,51 @@ app.post(
             config = null;
           }
 
-          
-
           // -------- Friendly fields for emails --------
           const orderId = session.id;
           const orderTotalUSD = (session.amount_total / 100).toFixed(2);
           const currency = String(session.currency || 'usd').toUpperCase();
           const customerEmail = session.customer_details?.email || '';
           const customerName = session.customer_details?.name || '';
+          const brandName = MAIL_FROM_NAME || 'Rock Creek Granite';
 
-          // ================== INTERNAL EMAIL ==================
+          // ================== INTERNAL EMAIL (orders@) ==================
           try {
-  // If the client didn’t POST a DXF via /api/email-dxf, we still attach a tiny fallback
-  const dxfAttachment = makeDxfAttachmentFromConfig(config); // safe even if config is null
+            const internalSubject = `${process.env.NODE_ENV === 'production' ? '' : '[TEST] '}Order confirmed — ${orderId}`;
+            const internalHtml = renderInternalEmailHTML(config, session);
+            const internalText = renderInternalEmailText(config, session);
 
-  await sendEmail({
-    to: process.env.ORDER_NOTIFY_EMAIL || process.env.BUSINESS_EMAIL,
-    subject: internalSubject,
-    html: internalHtml,
-    text: internalText,
-    attachments: dxfAttachment ? [dxfAttachment] : []  // attach if available
-  });
+            // Attach a tiny fallback DXF so you always have *something* in the inbox
+            const dxfAttachment = makeDxfAttachmentFromConfig(config);
 
-  console.log('[mail] internal order email sent', dxfAttachment ? 'with DXF' : '(no DXF)');
-} catch (e) {
-  console.error('[mail] internal order email failed:', e);
-}
+            await sendEmail({
+              to: ORDER_NOTIFY_EMAIL,
+              subject: internalSubject,
+              html: internalHtml,
+              text: internalText,
+              attachments: dxfAttachment ? [dxfAttachment] : []
+            });
+            console.log('[mail] internal order email sent', dxfAttachment ? 'with DXF' : '(no DXF)');
+          } catch (e) {
+            console.error('[mail] internal order email failed:', e);
+          }
 
-
-          // ================== CUSTOMER EMAIL ==================
+          // ================== CUSTOMER EMAIL (if we have email) ==================
           if (customerEmail) {
             try {
+              const customerSubject = `${process.env.NODE_ENV === 'production' ? '' : '[TEST] '}Thanks! We received your order — ${orderId}`;
+              const customerHtml = renderCustomerEmailHTML(config, session);
+              const customerText =
+                `Thanks — we received your order!\n\n` +
+                `Order #: ${orderId}\n` +
+                `Total: $${orderTotalUSD} ${currency}\n`;
+
               await sendEmail({
                 to: customerEmail,
-                subject: `${process.env.NODE_ENV === 'production' ? '' : '[TEST] '}Thanks! We received your order — ${orderId}`,
-                html: renderCustomerEmailHTML(config, session),
-                text:
-                  `Thanks — we received your order!\n\n` +
-                  `Order #: ${orderId}\n` +
-                  `Total: $${orderTotalUSD} ${currency}\n`
+                subject: customerSubject,
+                html: customerHtml,
+                text: customerText,
+                replyTo: ORDER_NOTIFY_EMAIL
               });
               console.log('[mail] customer email sent ->', customerEmail);
             } catch (e) {
@@ -564,7 +577,7 @@ app.post('/api/email-dxf', async (req, res) => {
     });
     console.log('[mail] DXF email sent ->', to);
 
-    // optional bcc as separate send (Resend handles bcc too, but separate ensures logs)
+    // optional bcc as separate send
     if (bcc) {
       try {
         await sendEmail({
@@ -593,7 +606,6 @@ app.post('/api/email-dxf-from-url', async (req, res) => {
     const { to, bcc, subject, config, dxfUrl } = req.body || {};
     if (!to || !dxfUrl) return res.status(400).json({ error: 'Missing "to" or "dxfUrl"' });
 
-    // Fetch the DXF file and convert to base64
     const r = await fetch(dxfUrl);
     if (!r.ok) return res.status(400).json({ error: `Unable to fetch DXF: ${r.status}` });
     const buf = Buffer.from(await r.arrayBuffer());
@@ -623,9 +635,7 @@ app.post('/api/email-dxf-from-url', async (req, res) => {
   }
 });
 
-
 // ---------------------------- Diagnostics & Health ----------------------------
-// simple mail test (safe): GET /.well-known/mail-debug?to=you@example.com
 app.get('/.well-known/mail-debug', async (req, res) => {
   try {
     if (MAIL_MODE !== 'resend-api') return res.status(500).json({ ok:false, error: 'RESEND_API_KEY missing' });
@@ -643,7 +653,7 @@ app.get('/.well-known/mail-debug', async (req, res) => {
 });
 
 app.get('/.well-known/health', (_req, res) => res.json({ ok: true, ts: new Date().toISOString() }));
-app.get('/healthz', (_req, res) => res.json({ ok: true, ts: new Date().toISOString() })); // extra, in case Render points here
+app.get('/healthz', (_req, res) => res.json({ ok: true, ts: new Date().toISOString() }));
 app.get('/', (_req, res) => res.type('text/plain').send('ok'));
 
 // ---------------------------- Start -------------------------------------------
