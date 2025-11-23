@@ -114,6 +114,19 @@ function computePricing(cfg) {
   const total = services + tax;
   return { area, material, sinks, backsplash: bpsf, ship, taxRate, tax, total, services };
 }
+function faucetDesc(s) {
+  const n = parseInt(s?.faucet ?? 1, 10) || 1;
+  if (n === 1) return '1-hole';
+  const spread = +s?.spread || (n === 3 ? 8 : 0);
+  return n === 3 ? `3-hole ${spread}" spread` : `${n}-hole`;
+}
+function sinksFaucetList(cfg) {
+  const list = (cfg?.sinks || []).map((s, i) => {
+    const name = s?.key || s?.type || `sink-${i+1}`;
+    return `Sink ${i+1} (${name}): ${faucetDesc(s)}`;
+  });
+  return list.length ? list.join('\n') : 'None';
+}
 
 // metadata chunking (stay under Stripe 500-char limit per value)
 function encodeCfgForMeta(obj) {
@@ -221,6 +234,7 @@ function renderCustomerEmailHTML(cfg, session) {
       <div><strong>Size:</strong> ${dims || 'N/A'}</div>
       <div><strong>Polished edges:</strong> ${edges}</div>
       <div><strong>Sinks:</strong> ${sinks}</div>
+      <div><strong>Faucets</strong> ${sinksFaucetList(config)}</div>
       <div><strong>Backsplash:</strong> ${cfg?.backsplash ? 'Yes' : 'No'}</div>
       <div><strong>Stone:</strong> ${cfg?.color || 'N/A'}</div>
     </div>
@@ -238,6 +252,7 @@ function renderInternalEmailHTML(cfg, session) {
     `Shape: ${cfg?.shape || 'N/A'}`,
     `Dims: ${cfg?.dims ? JSON.stringify(cfg.dims) : 'N/A'}`,
     `Sinks: ${(cfg?.sinks || []).length}`,
+    `Faucets:\n${sinksFaucetList(config)}\n`,
     `Edges: ${(cfg?.edges || []).join(', ') || 'None'}`,
     `Backsplash: ${cfg?.backsplash ? 'Yes' : 'No'}`,
     `Color: ${cfg?.color || 'N/A'}`,
