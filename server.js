@@ -145,48 +145,87 @@ function reassembleCfgFromMeta(md) {
   catch { return null; }
 }
 
-// --- Minimal DXF attachment helper (fallback if client DXF is not provided) ---
-function makeDxfAttachmentFromConfig(cfg) {
+// --- Scaled DXF generator: outline at 1:1 inches, filename includes orderId ---
+function makeDxfAttachmentFromConfig(cfg, orderId = 'order') {
   try {
-    const labelParts = [
-      `RCG ORDER`,
-      `Shape: ${cfg?.shape || 'N/A'}`,
-      `Dims: ${cfg?.shape === 'rectangle'
-        ? `${cfg?.dims?.L}" x ${cfg?.dims?.W}"`
-        : (cfg?.shape === 'circle'
-            ? `${cfg?.dims?.D}" Ø`
-            : (cfg?.shape
-                ? `${cfg?.dims?.n}-sides, ${cfg?.dims?.A}" side`
-                : 'N/A'))}`,
-      `Sinks: ${(cfg?.sinks || []).length}`,
-      `Edges: ${(cfg?.edges || []).join(', ') || 'None'}`,
-      `Backsplash: ${cfg?.backsplash ? 'Yes' : 'No'}`
-    ].join('  |  ');
+    const ENT = [];
+    const push = (...a) => { for (const v of a) ENT.push(String(v)); };
 
-    const dxfLines = [
-      '0','SECTION',
-      '2','HEADER',
+    // Header: set drawing units to inches (1)
+    const header = [
+      '0','SECTION','2','HEADER',
+      '9','$INSUNITS','70','1', // 1 = Inches
       '0','ENDSEC',
-      '0','SECTION',
-      '2','ENTITIES',
-      '0','TEXT',
-      '8','0',
-      '10','0',
-      '20','0',
-      '40','12',
-      '1', labelParts,
-      '0','ENDSEC',
-      '0','EOF'
+      '0','SECTION','2','ENTITIES'
     ];
-    const dxf = dxfLines.join('\n');
+
+    let drew = false;
+    const asNum = (v) => Math.max(0, Number(v) || 0);
+    const LAYER = 'OUTLINE';
+
+    if (cfg?.shape === 'rectangle') {
+      const L = asNum(cfg?.dims?.L);
+      const W = asNum(cfg?.dims?.W);
+      if (L > 0 && W > 0) {
+        // Closed LWPOLYLINE rectangle from (0,0) to (L,W)
+        push('0','LWPOLYLINE','8',LAYER,'90','4','70','1',
+             '10','0','20','0',
+             '10',L,'20','0',
+             '10',L,'20',W,
+             '10','0','20',W);
+        drew = true;
+      }
+    } else if (cfg?.shape === 'circle') {
+      const D = asNum(cfg?.dims?.D);
+      if (D > 0) {
+        const R = D / 2;
+        // Center at (R,R) so extents are [0..D] in X and Y
+        push('0','CIRCLE','8',LAYER,'10',R,'20',R,'40',R);
+        drew = true;
+      }
+    } else if (cfg?.shape === 'polygon') {
+      const n = Math.max(3, asNum(cfg?.dims?.n) || 0);
+      const s = asNum(cfg?.dims?.A);
+      if (n >= 3 && s > 0) {
+        // Regular polygon with side length s
+        const R = s / (2 * Math.sin(Math.PI / n)); // circumradius in inches
+        const verts = [];
+        for (let i = 0; i < n; i++) {
+          const ang = (2 * Math.PI * i) / n; // start at angle 0
+          const x = R * Math.cos(ang);
+          const y = R * Math.sin(ang);
+          verts.push([x, y]);
+        }
+        // Shift so all coordinates are >= 0
+        const minX = Math.min(...verts.map(v => v[0]));
+        const minY = Math.min(...verts.map(v => v[1]));
+        const shifted = verts.map(([x, y]) => [x - minX, y - minY]);
+
+        push('0','LWPOLYLINE','8',LAYER,'90',n,'70','1');
+        for (const [x, y] of shifted) push('10', x, '20', y);
+        drew = true;
+      }
+    }
+
+    if (!drew) {
+      // Fallback label if config is missing or invalid
+      const label = `RCG ORDER — ${cfg?.shape || 'N/A'}`;
+      push('0','TEXT','8','0','10','0','20','0','40','1','1',label);
+    }
+
+    const footer = ['0','ENDSEC','0','EOF'];
+    const dxf = header.concat(ENT).concat(footer).join('\n');
+
+    const safeId = String(orderId || 'order').replace(/[^A-Za-z0-9_-]+/g, '').slice(-24);
     return {
-      filename: 'RCG_CutSheet.dxf',
-      content: Buffer.from(dxf, 'utf8').toString('base64') // base64 for Resend attachments
+      filename: `RCG_Order_${safeId || 'order'}.dxf`,
+      content: Buffer.from(dxf, 'utf8').toString('base64')
     };
   } catch {
     return null;
   }
 }
+
 
 // ---------------------------- Mail (Resend HTTP) ------------------------------
 /**
@@ -374,7 +413,7 @@ app.post(
             const internalText = renderInternalEmailText(config, session);
 
             // Attach a tiny fallback DXF so you always have *something* in the inbox
-            const dxfAttachment = makeDxfAttachmentFromConfig(config);
+            const dxfAttachment = makeDxfAttachmentFromConfig(config, orderId);
 
             await sendEmail({
               to: ORDER_NOTIFY_EMAIL,
