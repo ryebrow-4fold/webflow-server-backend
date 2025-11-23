@@ -276,7 +276,8 @@ function getSinkCutoutDims(sink) {
   return { w: Math.max(0, d.w - 0.5), h: Math.max(0, d.h - 0.5), type: d.type };
 }
 
-// --- Scaled DXF generator: 1:1 inches; draws outline, 4" backsplash, polished edges, sink cutouts
+// --- Scaled DXF generator: 1:1 inches; draws outline, OUTSIDE 4" backsplash with 1" gap,
+//     polished edges, and sink cutouts (oval/rect) on proper layers.
 function makeDxfAttachmentFromConfig(cfg, orderId = 'order') {
   try {
     const ENT = [];
@@ -303,7 +304,7 @@ function makeDxfAttachmentFromConfig(cfg, orderId = 'order') {
     };
     const addEllipse = (cx,cy,rx,ry,layer) => {
       const major = rx >= ry ? rx : ry;
-      const ratio = major ? ( (rx>=ry ? ry : rx) / major ) : 1;
+      const ratio = major ? ((rx>=ry ? ry : rx) / major) : 1;
       const majorX = (rx >= ry) ? major : 0;
       const majorY = (rx >= ry) ? 0 : major;
       push('0','ELLIPSE','8',layer,
@@ -314,11 +315,10 @@ function makeDxfAttachmentFromConfig(cfg, orderId = 'order') {
 
     let drewAnything = false;
 
-    // Only full detailing for rectangle slabs (your configurator primary path)
     if (cfg?.shape === 'rectangle') {
       const L = Math.max(0, Number(cfg?.dims?.L) || 0);
       const W = Math.max(0, Number(cfg?.dims?.W) || 0);
-      // Slab outline
+      // Slab outline (origin bottom-left)
       addRectOutline(0, 0, L, W, 'OUTLINE', true);
       drewAnything = true;
 
@@ -329,14 +329,16 @@ function makeDxfAttachmentFromConfig(cfg, orderId = 'order') {
       if (edges.includes('left'))   addLine(0, 0, 0, W, 'POLISHED');
       if (edges.includes('right'))  addLine(L, 0, L, W, 'POLISHED');
 
-      // 4" backsplash on unpolished sides if backsplash enabled
+      // OUTSIDE 4" backsplash with 1" gap on *unpolished* sides
+      // gap = 1", depth = 4"
       if (cfg?.backsplash) {
+        const GAP = 1, DEPTH = 4;
         const unpol = ['top','right','bottom','left'].filter(k => !edges.includes(k));
         for (const side of unpol) {
-          if (side === 'bottom') addRectOutline(0, 0, L, 4, 'BACKSPLASH');
-          if (side === 'top')    addRectOutline(0, W-4, L, 4, 'BACKSPLASH');
-          if (side === 'left')   addRectOutline(0, 0, 4, W, 'BACKSPLASH');
-          if (side === 'right')  addRectOutline(L-4, 0, 4, W, 'BACKSPLASH');
+          if (side === 'bottom') addRectOutline(0, -(GAP+DEPTH), L, DEPTH, 'BACKSPLASH');        // y: -5..-1
+          if (side === 'top')    addRectOutline(0, W + GAP,      L, DEPTH, 'BACKSPLASH');        // y: W+1..W+5
+          if (side === 'left')   addRectOutline(-(GAP+DEPTH), 0, DEPTH, W, 'BACKSPLASH');        // x: -5..-1
+          if (side === 'right')  addRectOutline(L + GAP, 0,      DEPTH, W, 'BACKSPLASH');        // x: L+1..L+5
         }
       }
 
@@ -353,27 +355,22 @@ function makeDxfAttachmentFromConfig(cfg, orderId = 'order') {
         if (dims.type === 'oval') {
           const rx = dims.w / 2;
           const ry = dims.h / 2;
-          // ELLIPSE centered at (cx,cy)
           addEllipse(cx, cy, rx, ry, 'CUTOUT');
         } else {
-          // Rectangular cutout centered at (cx,cy)
           const x0 = cx - dims.w / 2;
           const y0 = cy - dims.h / 2;
           addRectOutline(x0, y0, dims.w, dims.h, 'CUTOUT');
         }
       }
     } else if (cfg?.shape === 'circle') {
-      // Basic circle slab (no splash/edges/cutouts logic here)
       const D = Math.max(0, Number(cfg?.dims?.D) || 0);
       const R = D / 2;
-      addEllipse(R, R, R, R, 'OUTLINE'); // circle as ellipse with rx=ry
+      addEllipse(R, R, R, R, 'OUTLINE');
       drewAnything = true;
     } else if (cfg?.shape === 'polygon') {
-      // Regular polygon slab outline (no splash/cutouts for now)
       const n = Math.max(3, Number(cfg?.dims?.n) || 0);
       const s = Math.max(0, Number(cfg?.dims?.A) || 0);
       if (n >= 3 && s > 0) {
-        // build vertices
         const R = s / (2 * Math.sin(Math.PI / n));
         const verts = [];
         for (let i = 0; i < n; i++) {
@@ -400,7 +397,7 @@ function makeDxfAttachmentFromConfig(cfg, orderId = 'order') {
     const footer = ['0','ENDSEC','0','EOF'];
     const dxf = header.concat(ENT).concat(footer).join('\n');
 
-    // Shortened order id: last 8 safe chars
+    // Shortened order id in filename
     const shortId = String(orderId || 'order').replace(/[^A-Za-z0-9_-]+/g, '').slice(-8) || 'order';
     return {
       filename: `RCG_Order_${shortId}.dxf`,
@@ -410,6 +407,7 @@ function makeDxfAttachmentFromConfig(cfg, orderId = 'order') {
     return null;
   }
 }
+
 
 // ---------- Stripe Webhook (must stay BEFORE express.json) ----------
 app.post(
