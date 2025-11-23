@@ -145,24 +145,45 @@ function reassembleCfgFromMeta(md) {
 
 // ---------------------------- Mail (Resend HTTP) ------------------------------
 /**
- * sendEmail({ to, subject, html, text, attachments? })
+ * sendEmail({ to, bcc, subject, text, html, attachments?, replyTo? })
  * attachments: [{ filename, content (base64) }]
  */
-async function sendEmail({ to, subject, text, html, attachments = [], bcc }) {
+async function sendEmail({ to, bcc, subject, text, html, attachments = [], replyTo }) {
   if (MAIL_MODE !== 'resend-api') {
     throw new Error('RESEND_API_KEY missing; cannot send email');
   }
 
+  // enforce proper "to" formatting for Resend validation
+  const toList = Array.isArray(to) ? to : [to];
+  const clean = (s) => String(s || '').trim();
+  const formattedTo = toList
+    .filter(Boolean)
+    .map(addr => {
+      // Support "Name <email@...>" or just "email@..."
+      return /<.+@.+>/.test(addr) || /.+@.+\..+/.test(addr) ? addr : null;
+    })
+    .filter(Boolean);
+
+  if (!formattedTo.length) {
+    throw new Error('Invalid "to" field; must be "email@example.com" or "Name <email@example.com>"');
+  }
+
   const body = {
     from: `${MAIL_FROM_NAME} <${MAIL_FROM}>`,
-    to: Array.isArray(to) ? to : [to],
+    to: formattedTo,
     subject,
     ...(text ? { text } : {}),
     ...(html ? { html } : {}),
+    ...(replyTo ? { reply_to: replyTo } : {}),
     ...(bcc ? { bcc: Array.isArray(bcc) ? bcc : [bcc] } : {}),
     ...(attachments.length
       ? { attachments: attachments.map(a => ({ filename: a.filename, content: a.content })) }
       : {}),
+    // Deliverability niceties:
+    headers: {
+      'List-Unsubscribe': `<mailto:${ORDER_NOTIFY_EMAIL}>`,
+    },
+    tags: [{ name: 'rcg-order' }],
   };
 
   const resp = await fetch('https://api.resend.com/emails', {
@@ -180,6 +201,7 @@ async function sendEmail({ to, subject, text, html, attachments = [], bcc }) {
   }
   return resp.json();
 }
+
 
 // ---------------------------- Tiny HTML templates -----------------------------
 function renderCustomerEmailHTML(cfg, session) {
@@ -514,6 +536,43 @@ app.post('/api/email-dxf', async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
+
+// ---------------------------- API: Email DXF from URL -------------------------
+app.post('/api/email-dxf-from-url', async (req, res) => {
+  try {
+    const { to, bcc, subject, config, dxfUrl } = req.body || {};
+    if (!to || !dxfUrl) return res.status(400).json({ error: 'Missing "to" or "dxfUrl"' });
+
+    // Fetch the DXF file and convert to base64
+    const r = await fetch(dxfUrl);
+    if (!r.ok) return res.status(400).json({ error: `Unable to fetch DXF: ${r.status}` });
+    const buf = Buffer.from(await r.arrayBuffer());
+    const base64 = buf.toString('base64');
+
+    const summary =
+      `Shape: ${config?.shape}\n` +
+      `Size: ${JSON.stringify(config?.dims)}\n` +
+      `Polished: ${Array.isArray(config?.edges) ? config.edges.join(', ') : 'None'}\n` +
+      `Backsplash: ${config?.backsplash ? 'Yes' : 'No'}\n` +
+      `Sinks: ${(config?.sinks || []).length}`;
+
+    await sendEmail({
+      to,
+      bcc,
+      subject: subject || 'RCG DXF',
+      text: `Attached is your DXF cut sheet.\n\n${summary}`,
+      html: `<pre style="font-family:monospace;white-space:pre-wrap">${summary}</pre>`,
+      attachments: [{ filename: 'RCG_CutSheet.dxf', content: base64 }],
+      replyTo: ORDER_NOTIFY_EMAIL,
+    });
+
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('email-dxf-from-url failed:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 
 // ---------------------------- Diagnostics & Health ----------------------------
 // simple mail test (safe): GET /.well-known/mail-debug?to=you@example.com
