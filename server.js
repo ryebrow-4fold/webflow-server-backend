@@ -1,4 +1,4 @@
-// server.js — Express + Stripe Checkout + Webhook + Resend email (ESM)
+// server.js — Express + Stripe Checkout + Webhook + Resend email + DXF (ESM)
 // Requires package.json: { "type": "module" }
 
 import 'dotenv/config';
@@ -21,22 +21,18 @@ const PORT = process.env.PORT || 3000;
 const DEFAULT_FRONTEND = 'https://www.rockcreekgranite.com';
 const FRONTEND_URL = process.env.FRONTEND_URL || DEFAULT_FRONTEND;
 
-// allowed origins: comma-separated
 const defaultAllowed = [FRONTEND_URL, FRONTEND_URL.replace('www.', '')]
   .filter((v, i, a) => a.indexOf(v) === i);
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',')
   : defaultAllowed).map(s => s.trim()).filter(Boolean);
 
-// Stripe
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || '';
 if (!STRIPE_SECRET_KEY) console.warn('[WARN] STRIPE_SECRET_KEY not set');
 const stripe = new Stripe(STRIPE_SECRET_KEY, { apiVersion: '2024-06-20' });
 
-// Webhook secret
 if (!process.env.STRIPE_WEBHOOK_SECRET) console.warn('[WARN] STRIPE_WEBHOOK_SECRET not set');
 
-// Resend (mail) — HTTP API only (no SMTP here)
 const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
 const MAIL_FROM = process.env.SMTP_FROM || process.env.BUSINESS_EMAIL || 'orders@rockcreekgranite.com';
 const MAIL_FROM_NAME = process.env.MAIL_FROM_NAME || 'Rock Creek Granite';
@@ -114,21 +110,8 @@ function computePricing(cfg) {
   const total = services + tax;
   return { area, material, sinks, backsplash: bpsf, ship, taxRate, tax, total, services };
 }
-function faucetDesc(s) {
-  const n = parseInt(s?.faucet ?? 1, 10) || 1;
-  if (n === 1) return '1-hole';
-  const spread = +s?.spread || (n === 3 ? 8 : 0);
-  return n === 3 ? `3-hole ${spread}" spread` : `${n}-hole`;
-}
-function sinksFaucetList(cfg) {
-  const list = (cfg?.sinks || []).map((s, i) => {
-    const name = s?.key || s?.type || `sink-${i+1}`;
-    return `Sink ${i+1} (${name}): ${faucetDesc(s)}`;
-  });
-  return list.length ? list.join('\n') : 'None';
-}
 
-// metadata chunking (stay under Stripe 500-char limit per value)
+// ----- metadata chunking (stay under Stripe 500-char limit per value) -----
 function encodeCfgForMeta(obj) {
   try { return Buffer.from(JSON.stringify(obj), 'utf8').toString('base64'); }
   catch { return ''; }
@@ -156,6 +139,131 @@ function reassembleCfgFromMeta(md) {
   catch { return null; }
 }
 
+// ---------------------------- Faucet helpers (emails) -------------------------
+function faucetDesc(s) {
+  const n = parseInt(s?.faucet ?? 1, 10) || 1;
+  if (n === 1) return '1-hole';
+  const spread = +s?.spread || (n === 3 ? 8 : 0);
+  return n === 3 ? `3-hole ${spread}" spread` : `${n}-hole`;
+}
+function sinksFaucetList(cfg) {
+  const list = (cfg?.sinks || []).map((s, i) => {
+    const name = s?.key || s?.type || `sink-${i+1}`;
+    return `Sink ${i+1} (${name}): ${faucetDesc(s)}`;
+  });
+  return list.length ? list.join('\n') : 'None';
+}
+
+// --- DXF generator with faucet holes, splash outside, polished edges ---
+function makeDxfAttachmentFromConfig(cfg, orderId = '') {
+  if (!cfg || cfg.shape !== 'rectangle') {
+    const txt = 'RCG ORDER (non-rectangle)';
+    const dxf = ['0','SECTION','2','ENTITIES','0','TEXT','8','0','10','0','20','0','40','12','1',txt,'0','ENDSEC','0','EOF'].join('\n');
+    return { filename: `RCG_${(orderId || '').split('_').pop().slice(-8) || 'order'}.dxf`, content: Buffer.from(dxf,'utf8').toString('base64') };
+  }
+
+  // ---------- config ----------
+  const L = +cfg?.dims?.L || 0; // inches
+  const W = +cfg?.dims?.W || 0;
+  const sinks = Array.isArray(cfg?.sinks) ? cfg.sinks : [];
+  const edges = Array.isArray(cfg?.edges) ? cfg.edges : [];
+  const backsplash = !!cfg?.backsplash;
+
+  // Faucet defaults
+  const HOLE_D = 1.375; // 1-3/8"
+  const HOLE_R = HOLE_D / 2;
+  const FAUCET_SETBACK = 2; // 2" behind sink cutout
+  const OVAL_SEGMENTS = 72;
+
+  // Fallback (shrink 0.5" from your full sizes)
+  const FALLBACK = {
+    'bath-oval':    { type:'oval', w:16.5, h:13.5 },
+    'bath-rect':    { type:'rect', w:17.5, h:12.5 },
+    'kitchen-rect': { type:'rect', w:21.5, h:15.5 },
+  };
+
+  // ---------- DXF helpers ----------
+  const out = [];
+  const push = (...a) => out.push(...a);
+
+  function line(layer, x1,y1,x2,y2){ push('0','LINE','8',layer,'10',x1,'20',y1,'11',x2,'21',y2); }
+  function circle(layer, cx,cy,r){ push('0','CIRCLE','8',layer,'10',cx,'20',cy,'40',r); }
+  function lwpoly(layer, pts, closed){
+    push('0','LWPOLYLINE','8',layer,'90',String(pts.length),'70', closed? '1':'0');
+    for (const [x,y] of pts){ push('10',x,'20',y); }
+  }
+  function rect(layer, x, y, w, h){ lwpoly(layer, [[x,y],[x+w,y],[x+w,y+h],[x,y+h]], true); }
+  function oval(layer, cx, cy, rx, ry, segs = OVAL_SEGMENTS){
+    const pts = [];
+    for (let i=0;i<segs;i++){
+      const t = (i/segs)*Math.PI*2;
+      pts.push([cx + rx*Math.cos(t), cy + ry*Math.sin(t)]);
+    }
+    lwpoly(layer, pts, true);
+  }
+
+  // ---------- ENTITIES ----------
+  push('0','SECTION','2','ENTITIES');
+
+  // Slab outline (0,0) to (L,W)
+  rect('SLAB', 0, 0, L, W);
+
+  // Polished edges
+  if (edges.includes('top'))    line('POLISHED', 0, W, L, W);
+  if (edges.includes('bottom')) line('POLISHED', 0, 0, L, 0);
+  if (edges.includes('left'))   line('POLISHED', 0, 0, 0, W);
+  if (edges.includes('right'))  line('POLISHED', L, 0, L, W);
+
+  // External backsplash (4" tall), 1" above slab
+  if (backsplash) { rect('SPLASH', 0, W + 1, L, 4); }
+
+  // Sinks & faucet holes
+  for (const s of sinks) {
+    const sx = +s.x || 0;
+    const sy = +s.y || 0;
+
+    const key = s.key || '';
+    const t   = s.type || (FALLBACK[key]?.type) || 'rect';
+    const w   = +s.cutoutW || FALLBACK[key]?.w || 16;
+    const h   = +s.cutoutH || FALLBACK[key]?.h || 13;
+    const rx  = w/2, ry = h/2;
+
+    // cutout
+    if (t === 'oval') { oval('CUTOUT', sx, sy, rx, ry); }
+    else { rect('CUTOUT', sx - rx, sy - ry, w, h); }
+
+    // faucet holes
+    const faucet = parseInt(s.faucet == null ? 1 : s.faucet, 10) || 1;
+    const spread = +s.spread || (faucet === 3 ? 8 : 0);
+    const yTopOfSink = sy + ry;
+    const holeY = yTopOfSink + FAUCET_SETBACK;
+
+    if (faucet === 1) {
+      circle('FAUCET', sx, holeY, HOLE_R);
+    } else if (faucet === 3) {
+      const half = spread / 2;
+      circle('FAUCET', sx, holeY, HOLE_R);
+      circle('FAUCET', sx - half, holeY, HOLE_R);
+      circle('FAUCET', sx + half, holeY, HOLE_R);
+    } else {
+      const gap = 1.25; // generic spacing
+      const total = (faucet-1)*gap;
+      for (let i=0;i<faucet;i++){
+        const x = sx - total/2 + i*gap;
+        circle('FAUCET', x, holeY, HOLE_R);
+      }
+    }
+  }
+
+  push('0','ENDSEC','0','EOF');
+
+  const short = (orderId||'').split('_').pop().slice(-8);
+  return {
+    filename: `RCG_${short || 'order'}.dxf`,
+    content: Buffer.from(out.join('\n'), 'utf8').toString('base64')
+  };
+}
+
 // ---------------------------- Mail (Resend HTTP) ------------------------------
 /**
  * sendEmail({ to, bcc, subject, text, html, attachments?, replyTo? })
@@ -165,12 +273,11 @@ async function sendEmail({ to, bcc, subject, text, html, attachments = [], reply
   if (MAIL_MODE !== 'resend-api') {
     throw new Error('RESEND_API_KEY missing; cannot send email');
   }
-  // Format "to" to pass Resend validation
+
   const toList = Array.isArray(to) ? to : [to];
   const formattedTo = toList
-    .filter(Boolean)
-    .map(addr => /<.+@.+>/.test(addr) || /.+@.+\..+/.test(addr) ? addr : null)
-    .filter(Boolean);
+    .map(addr => String(addr || '').trim())
+    .filter(addr => /<.+@.+>/.test(addr) || /.+@.+\..+/.test(addr));
 
   if (!formattedTo.length) {
     throw new Error('Invalid "to" field; must be "email@example.com" or "Name <email@example.com>"');
@@ -199,6 +306,7 @@ async function sendEmail({ to, bcc, subject, text, html, attachments = [], reply
     },
     body: JSON.stringify(body),
   });
+
   if (!resp.ok) {
     const errTxt = await resp.text().catch(() => '');
     throw new Error(`Resend API failed: ${resp.status} ${resp.statusText} ${errTxt}`);
@@ -225,7 +333,9 @@ function renderCustomerEmailHTML(cfg, session) {
       <div style="width:10px;height:10px;background:#ffc400;border-radius:2px"></div>
       <div style="font-size:18px;font-weight:700">Rock Creek Granite — Order Confirmation</div>
     </div>
+
     <p style="font-size:15px;line-height:1.5;margin:16px 0">Thanks for your order! We’ve received your payment and started your fabrication ticket.</p>
+
     <div style="background:#fafafa;border:1px solid #eee;padding:12px 14px;margin:12px 0">
       <div><strong>Stripe Session:</strong> ${session.id}</div>
       <div><strong>Total Paid:</strong> ${money(total)}</div>
@@ -234,14 +344,17 @@ function renderCustomerEmailHTML(cfg, session) {
       <div><strong>Size:</strong> ${dims || 'N/A'}</div>
       <div><strong>Polished edges:</strong> ${edges}</div>
       <div><strong>Sinks:</strong> ${sinks}</div>
-      <div><strong>Faucets</strong> ${sinksFaucetList(config)}</div>
       <div><strong>Backsplash:</strong> ${cfg?.backsplash ? 'Yes' : 'No'}</div>
       <div><strong>Stone:</strong> ${cfg?.color || 'N/A'}</div>
+      <div><strong>Faucets:</strong><br><span style="white-space:pre-line;">${sinksFaucetList(cfg)}</span></div>
     </div>
+
     <p style="font-size:14px;color:#333">We’ll follow up with your production timeline and shipping details shortly.</p>
     <p style="font-size:13px;color:#666;margin-top:22px">Questions? Reply to this email or call (555) 555-5555.</p>
-  </div>`;
+  </div>
+  `;
 }
+
 function renderInternalEmailHTML(cfg, session) {
   const money = v => `$${(v/100).toFixed(2)}`;
   const lines = [
@@ -252,11 +365,12 @@ function renderInternalEmailHTML(cfg, session) {
     `Shape: ${cfg?.shape || 'N/A'}`,
     `Dims: ${cfg?.dims ? JSON.stringify(cfg.dims) : 'N/A'}`,
     `Sinks: ${(cfg?.sinks || []).length}`,
-    `Faucets:\n${sinksFaucetList(config)}\n`,
     `Edges: ${(cfg?.edges || []).join(', ') || 'None'}`,
     `Backsplash: ${cfg?.backsplash ? 'Yes' : 'No'}`,
     `Color: ${cfg?.color || 'N/A'}`,
+    `Faucets:\n${sinksFaucetList(cfg)}`
   ];
+
   return `
   <div style="font-family:Arial,sans-serif;max-width:680px;margin:0 auto;padding:16px;color:#111">
     <div style="padding:12px 0 16px;border-bottom:2px solid #eee;display:flex;align-items:center;gap:10px">
@@ -264,159 +378,9 @@ function renderInternalEmailHTML(cfg, session) {
       <div style="font-size:18px;font-weight:800">NEW RCG ORDER</div>
     </div>
     <pre style="white-space:pre-wrap;background:#fafafa;border:1px solid #eee;padding:12px 14px;margin:14px 0;font-size:13px;line-height:1.4">${lines.join('\n')}</pre>
-  </div>`;
+  </div>
+  `;
 }
-
-// ------------------- Scaled DXF with splash, polished edges & cutouts ---------
-
-// Default sink sizes (inches). If the client passes sizes, those override.
-// We shrink each dimension by 0.5" for the actual cutout.
-const DEFAULT_SINK_SIZES = {
-  'bath-oval':   { w: 17, h: 14, type: 'oval' },
-  'bath-rect':   { w: 18, h: 13, type: 'rect' },
-  'kitchen-rect':{ w: 22, h: 16, type: 'rect' },
-};
-
-function getSinkCutoutDims(sink) {
-  // If client provided explicit cutout dims, prefer them
-  const w0 = Number(sink?.cutoutW || sink?.w || 0);
-  const h0 = Number(sink?.cutoutH || sink?.h || 0);
-  const t0 = sink?.type;
-  if (w0 > 0 && h0 > 0) {
-    return { w: Math.max(0, w0 - 0.5), h: Math.max(0, h0 - 0.5), type: t0 || 'rect' };
-  }
-  // Otherwise fallback to defaults by key
-  const d = DEFAULT_SINK_SIZES[sink?.key] || null;
-  if (!d) return null;
-  return { w: Math.max(0, d.w - 0.5), h: Math.max(0, d.h - 0.5), type: d.type };
-}
-
-// --- DXF generator with faucet holes, splash outside, polished edges ---
-function makeDxfAttachmentFromConfig(cfg, orderId = '') {
-  if (!cfg || cfg.shape !== 'rectangle') {
-    // keep simple fallback if not a rectangle job
-    const txt = 'RCG ORDER (non-rectangle)'; 
-    const dxf = ['0','SECTION','2','ENTITIES','0','TEXT','8','0','10','0','20','0','40','12','1',txt,'0','ENDSEC','0','EOF'].join('\n');
-    return { filename: `RCG_${(orderId||'').slice(-8)}.dxf`, content: Buffer.from(dxf,'utf8').toString('base64') };
-  }
-
-  // ---------- config ----------
-  const L = +cfg?.dims?.L || 0; // inches
-  const W = +cfg?.dims?.W || 0;
-  const sinks = Array.isArray(cfg?.sinks) ? cfg.sinks : [];
-  const edges = Array.isArray(cfg?.edges) ? cfg.edges : [];
-  const backsplash = !!cfg?.backsplash;
-
-  // Faucet defaults
-  const HOLE_D = 1.375;                     // 1-3/8" typical faucet hole
-  const HOLE_R = HOLE_D / 2;
-  const FAUCET_SETBACK = 2;                 // 2" behind sink cutout
-  const OVAL_SEGMENTS = 72;                 // smoothness for oval approximation
-
-  // If a sink didn’t get cutout sizes client-side, use “shrunk by 0.5"” fallback
-  const FALLBACK = {
-    'bath-oval':   { type:'oval', w:16.5, h:13.5 },
-    'bath-rect':   { type:'rect', w:17.5, h:12.5 },
-    'kitchen-rect':{ type:'rect', w:21.5, h:15.5 },
-  };
-
-  // ---------- DXF helpers ----------
-  const out = [];
-  const push = (...a) => out.push(...a);
-
-  function line(layer, x1,y1,x2,y2){
-    push('0','LINE','8',layer,'10',x1,'20',y1,'11',x2,'21',y2);
-  }
-  function circle(layer, cx,cy,r){
-    push('0','CIRCLE','8',layer,'10',cx,'20',cy,'40',r);
-  }
-  function lwpoly(layer, pts, closed){
-    push('0','LWPOLYLINE','8',layer,'90',String(pts.length),'70', closed? '1':'0');
-    for (const [x,y] of pts){ push('10',x,'20',y); }
-  }
-  function rect(layer, x, y, w, h){
-    lwpoly(layer, [[x,y],[x+w,y],[x+w,y+h],[x,y+h]], true);
-  }
-  function oval(layer, cx, cy, rx, ry, segs = OVAL_SEGMENTS){
-    const pts = [];
-    for (let i=0;i<segs;i++){
-      const t = (i/segs)*Math.PI*2;
-      pts.push([cx + rx*Math.cos(t), cy + ry*Math.sin(t)]);
-    }
-    lwpoly(layer, pts, true);
-  }
-
-  // ---------- ENTITIES ----------
-  push('0','SECTION','2','ENTITIES');
-
-  // Slab outline (0,0) to (L,W)
-  rect('SLAB', 0, 0, L, W);
-
-  // Polished edges (draw over the slab edges)
-  if (edges.includes('top'))    line('POLISHED', 0, W, L, W);
-  if (edges.includes('bottom')) line('POLISHED', 0, 0, L, 0);
-  if (edges.includes('left'))   line('POLISHED', 0, 0, 0, W);
-  if (edges.includes('right'))  line('POLISHED', L, 0, L, W);
-
-  // External backsplash (4" tall), 1" above slab
-  if (backsplash) {
-    rect('SPLASH', 0, W + 1, L, 4);
-  }
-
-  // Sinks & faucet holes
-  for (const s of sinks) {
-    const sx = +s.x || 0;
-    const sy = +s.y || 0;
-
-    // determine cutout sizing
-    const key = s.key || '';
-    const t   = s.type || (FALLBACK[key]?.type) || 'rect';
-    const w   = +s.cutoutW || FALLBACK[key]?.w || 16;
-    const h   = +s.cutoutH || FALLBACK[key]?.h || 13;
-    const rx  = w/2, ry = h/2;
-
-    // cutout outline
-    if (t === 'oval') {
-      oval('CUTOUT', sx, sy, rx, ry);
-    } else {
-      rect('CUTOUT', sx - rx, sy - ry, w, h);
-    }
-
-    // faucet holes
-    const faucet = parseInt(s.faucet == null ? 1 : s.faucet, 10) || 1; // default to 1
-    const spread = +s.spread || (faucet === 3 ? 8 : 0);                // inches between L/R
-    const yTopOfSink = sy + ry;
-    const holeY = yTopOfSink + FAUCET_SETBACK;
-
-    if (faucet === 1) {
-      circle('FAUCET', sx, holeY, HOLE_R);
-    } else if (faucet === 3) {
-      const half = spread / 2;
-      circle('FAUCET', sx, holeY, HOLE_R);         // center
-      circle('FAUCET', sx - half, holeY, HOLE_R);  // left
-      circle('FAUCET', sx + half, holeY, HOLE_R);  // right
-    } else {
-      // For any other N, just draw N holes centered and spaced 1.25"
-      const gap = 1.25;
-      const total = (faucet-1)*gap;
-      for (let i=0;i<faucet;i++){
-        const x = sx - total/2 + i*gap;
-        circle('FAUCET', x, holeY, HOLE_R);
-      }
-    }
-  }
-
-  // close ENTITIES
-  push('0','ENDSEC','0','EOF');
-
-  // Filename with short ID
-  const short = (orderId||'').split('_').pop().slice(-8);
-  return {
-    filename: `RCG_${short || 'order'}.dxf`,
-    content: Buffer.from(out.join('\n'), 'utf8').toString('base64')
-  };
-}
-
 
 // ---------- Stripe Webhook (must stay BEFORE express.json) ----------
 app.post(
@@ -439,60 +403,33 @@ app.post(
         case 'checkout.session.completed': {
           const session = event.data.object;
 
-          // -------- Reassemble compact config from Stripe metadata --------
-          const md = session.metadata || {};
-          const parts = Number(md.cfg_parts || 0);
-          let cfgB64 = md.cfg || '';
-          if (!cfgB64 && parts > 0) {
-            let joined = '';
-            for (let i = 1; i <= parts; i++) joined += md[`cfg_${i}`] || '';
-            cfgB64 = joined;
-          }
-          let config = null;
-          try { config = cfgB64 ? JSON.parse(Buffer.from(cfgB64, 'base64').toString('utf8')) : null; }
-          catch { config = null; }
-
-          // -------- Friendly fields for emails --------
+          // Reassemble compact config from Stripe metadata
+          const cfg = reassembleCfgFromMeta(session.metadata) || {};
           const orderId = session.id;
           const orderTotalUSD = (session.amount_total / 100).toFixed(2);
           const currency = String(session.currency || 'usd').toUpperCase();
           const customerEmail = session.customer_details?.email || '';
-          const customerName = session.customer_details?.name || '';
-          const zip = config?.zip || md.zip || '';
 
-          const dimsTxt =
-            config?.shape === 'rectangle'
-              ? `${config?.dims?.L}" × ${config?.dims?.W}"`
-              : config?.shape === 'circle'
-              ? `${config?.dims?.D}" Ø`
-              : config?.shape
-              ? `${config?.dims?.n}-sides, ${config?.dims?.A}" side`
-              : 'N/A';
-
-          const brandName = process.env.MAIL_FROM_NAME || 'Rock Creek Granite';
-
-          // --- Email bodies
+          // -------- INTERNAL EMAIL (with DXF) --------
           const internalSubject = `${process.env.NODE_ENV === 'production' ? '' : '[TEST] '}Order confirmed — ${orderId}`;
-          const internalHtml = renderInternalEmailHTML(config || {}, session);
+          const internalHtml = renderInternalEmailHTML(cfg, session);
           const internalText =
             `New order confirmed\n\n` +
             `Stripe Session: ${orderId}\n` +
             `Customer: ${customerEmail || 'N/A'}\n` +
             `Total: $${orderTotalUSD} ${currency}\n` +
-            `ZIP: ${zip || 'N/A'}\n` +
-            `Shape: ${config?.shape || 'N/A'}\n` +
-            `Size: ${dimsTxt}\n` +
-            `Sinks: ${config?.sinks?.length || 0}\n` +
-            `Edges: ${Array.isArray(config?.edges) ? config.edges.join(', ') : 'None'}\n` +
-            `Backsplash: ${config?.backsplash ? 'Yes' : 'No'}\n`;
+            `ZIP: ${cfg?.zip || 'N/A'}\n` +
+            `Shape: ${cfg?.shape || 'N/A'}\n` +
+            `Size: ${cfg?.dims ? JSON.stringify(cfg.dims) : 'N/A'}\n` +
+            `Sinks: ${(cfg?.sinks || []).length}\n` +
+            `Edges: ${(cfg?.edges || []).join(', ') || 'None'}\n` +
+            `Backsplash: ${cfg?.backsplash ? 'Yes' : 'No'}\n` +
+            `Faucets:\n${sinksFaucetList(cfg)}\n`;
 
-          // -------- Attach DXF (generated server-side)
-          const dxfAttachment = makeDxfAttachmentFromConfig(config, orderId);
-
-          // ================== INTERNAL EMAIL ==================
           try {
+            const dxfAttachment = makeDxfAttachmentFromConfig(cfg, session.id);
             await sendEmail({
-              to: ORDER_NOTIFY_EMAIL,
+              to: process.env.ORDER_NOTIFY_EMAIL || process.env.BUSINESS_EMAIL,
               subject: internalSubject,
               html: internalHtml,
               text: internalText,
@@ -503,22 +440,24 @@ app.post(
             console.error('[mail] internal order email failed:', e);
           }
 
-          // ================== CUSTOMER EMAIL ==================
+          // -------- CUSTOMER EMAIL --------
           if (customerEmail) {
             try {
+              const customerSubject = `${process.env.NODE_ENV === 'production' ? '' : '[TEST] '}Thanks! We received your order — ${orderId}`;
               await sendEmail({
                 to: customerEmail,
-                subject: `${process.env.NODE_ENV === 'production' ? '' : '[TEST] '}Thanks! We received your order — ${orderId}`,
-                html: renderCustomerEmailHTML(config || {}, session),
+                subject: customerSubject,
+                html: renderCustomerEmailHTML(cfg, session),
                 text:
                   `Thanks — we received your order!\n\n` +
                   `Order #: ${orderId}\n` +
                   `Total: $${orderTotalUSD} ${currency}\n` +
-                  `Ship ZIP: ${zip || 'N/A'}\n` +
-                  `Shape: ${config?.shape || 'N/A'}\n` +
-                  `Size: ${dimsTxt}\n` +
-                  `Sinks: ${config?.sinks?.length || 0}\n` +
-                  `Backsplash: ${config?.backsplash ? 'Yes' : 'No'}\n`
+                  `Ship ZIP: ${cfg?.zip || 'N/A'}\n` +
+                  `Shape: ${cfg?.shape || 'N/A'}\n` +
+                  `Size: ${cfg?.dims ? JSON.stringify(cfg.dims) : 'N/A'}\n` +
+                  `Sinks: ${(cfg?.sinks || []).length}\n` +
+                  `Backsplash: ${cfg?.backsplash ? 'Yes' : 'No'}\n` +
+                  `Faucets:\n${sinksFaucetList(cfg)}\n`
               });
               console.log('[mail] customer email sent ->', customerEmail);
             } catch (e) {
@@ -528,13 +467,14 @@ app.post(
             console.log('[mail] no customer email on session; skipping customer send');
           }
 
-          // -------- Log compact summary
+          // Log compact summary
           console.log('[stripe] checkout.session.completed', {
             id: orderId,
             email: customerEmail,
             amount_total: session.amount_total,
-            cfg_summary: config ? { shape: config.shape, zip } : null
+            cfg_summary: cfg ? { shape: cfg.shape, zip: cfg?.zip || session.metadata?.zip || '' } : null
           });
+
           break;
         }
 
@@ -597,22 +537,20 @@ app.post('/api/create-checkout-session', async (req, res) => {
       });
     }
 
-    // Compact metadata (no pricing). If the embed includes per-sink cutout sizes/types,
-    // keep them so server doesn't need updates when sizes change in the client.
+    // compact metadata (no pricing); include sink cutout sizes & types + faucet params
     const compactCfg = {
       shape: config.shape,
       dims: config.dims,
       sinks: Array.isArray(config.sinks)
         ? config.sinks.map(s => ({
             key: s.key,
+            type: s.type,               // 'rect' | 'oval' if provided by client
+            cutoutW: s.cutoutW,         // inches (optional)
+            cutoutH: s.cutoutH,         // inches (optional)
             x: Number(s.x?.toFixed?.(2) ?? s.x),
             y: Number(s.y?.toFixed?.(2) ?? s.y),
-            faucet: s.faucet ?? '1',
+            faucet: s.faucet ?? 1,
             spread: s.spread ?? null,
-            // optional (if provided by the configurator):
-            cutoutW: s.cutoutW ?? s.w ?? undefined,
-            cutoutH: s.cutoutH ?? s.h ?? undefined,
-            type: s.type ?? undefined // 'oval' | 'rect'
           }))
         : [],
       color: config.color,
@@ -666,13 +604,11 @@ app.post('/api/email-dxf', async (req, res) => {
         ? `${config?.dims?.L}" × ${config?.dims?.W}"`
         : config?.shape === 'circle'
         ? `${config?.dims?.D}" Ø`
-        : (config?.shape
-            ? `${config?.dims?.n}-sides, ${config?.dims?.A}" side`
-            : 'N/A');
+        : (config?.shape ? `${config?.dims?.n}-sides, ${config?.dims?.A}" side` : 'N/A');
 
     const html = `
       <div style="font-family:Arial,Helvetica,sans-serif;max-width:640px;margin:0 auto;padding:16px;color:#111;">
-        <h2 style="margin:0 0 12px;">Rock Creek Granite — DXF attached</h2>
+        <h2 style="margin:0 0 12px;">${MAIL_FROM_NAME} — DXF attached</h2>
         <p style="margin:0 0 10px;">Auto-generated DXF cut sheet is attached.</p>
         <ul style="margin:0;padding-left:16px">
           <li>Shape: ${config?.shape || 'N/A'}</li>
@@ -685,12 +621,9 @@ app.post('/api/email-dxf', async (req, res) => {
 
     await sendEmail({ to, subject: subject || 'RCG DXF', html, text, attachments: [att] });
     if (bcc) {
-      try {
-        await sendEmail({ to: bcc, subject: subject || 'RCG DXF (copy)', html, text, attachments: [att] });
-      } catch (e) {
-        console.error('[mail] DXF email bcc failed:', e);
-      }
+      await sendEmail({ to: bcc, subject: subject || 'RCG DXF (copy)', html, text, attachments: [att] });
     }
+
     res.json({ ok: true });
   } catch (e) {
     console.error('email-dxf failed:', e);
@@ -738,7 +671,12 @@ app.get('/.well-known/mail-debug', async (req, res) => {
   try {
     if (MAIL_MODE !== 'resend-api') return res.status(500).json({ ok:false, error: 'RESEND_API_KEY missing' });
     const to = req.query.to || ORDER_NOTIFY_EMAIL;
-    const r = await sendEmail({ to, subject: '[RCG] Mail debug OK', text: 'This is a test', html: '<strong>Mail debug OK</strong>' });
+    const r = await sendEmail({
+      to,
+      subject: '[RCG] Mail debug OK',
+      text: 'This is a test email from /.well-known/mail-debug',
+      html: '<strong>Mail debug OK</strong>',
+    });
     res.json({ ok: true, to, r });
   } catch (e) {
     res.status(500).json({ ok:false, error: String(e.message || e) });
