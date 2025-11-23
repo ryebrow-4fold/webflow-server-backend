@@ -1,5 +1,5 @@
 // server.js — Express + Stripe Checkout + Webhook + Resend email (ESM)
-// Requires package.json: { "type": "module" } and Node >= 18
+// Requires package.json: { "type": "module" }
 
 import 'dotenv/config';
 import express from 'express';
@@ -33,18 +33,16 @@ const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || '';
 if (!STRIPE_SECRET_KEY) console.warn('[WARN] STRIPE_SECRET_KEY not set');
 const stripe = new Stripe(STRIPE_SECRET_KEY, { apiVersion: '2024-06-20' });
 
-// Webhook secret (single)
-const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || '';
-if (!STRIPE_WEBHOOK_SECRET) console.warn('[WARN] STRIPE_WEBHOOK_SECRET not set');
+// Webhook secret
+if (!process.env.STRIPE_WEBHOOK_SECRET) console.warn('[WARN] STRIPE_WEBHOOK_SECRET not set');
 
-// Resend (mail) — HTTP API only
+// Resend (mail) — HTTP API only (no SMTP here)
 const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
 const MAIL_FROM = process.env.SMTP_FROM || process.env.BUSINESS_EMAIL || 'orders@rockcreekgranite.com';
 const MAIL_FROM_NAME = process.env.MAIL_FROM_NAME || 'Rock Creek Granite';
 const MAIL_MODE = RESEND_API_KEY ? 'resend-api' : 'none';
 const ORDER_NOTIFY_EMAIL = process.env.ORDER_NOTIFY_EMAIL || 'orders@rockcreekgranite.com';
 
-// App
 const app = express();
 app.set('trust proxy', true);
 
@@ -145,88 +143,6 @@ function reassembleCfgFromMeta(md) {
   catch { return null; }
 }
 
-// --- Scaled DXF generator: outline at 1:1 inches, filename includes orderId ---
-function makeDxfAttachmentFromConfig(cfg, orderId = 'order') {
-  try {
-    const ENT = [];
-    const push = (...a) => { for (const v of a) ENT.push(String(v)); };
-
-    // Header: set drawing units to inches (1)
-    const header = [
-      '0','SECTION','2','HEADER',
-      '9','$INSUNITS','70','1', // 1 = Inches
-      '0','ENDSEC',
-      '0','SECTION','2','ENTITIES'
-    ];
-
-    let drew = false;
-    const asNum = (v) => Math.max(0, Number(v) || 0);
-    const LAYER = 'OUTLINE';
-
-    if (cfg?.shape === 'rectangle') {
-      const L = asNum(cfg?.dims?.L);
-      const W = asNum(cfg?.dims?.W);
-      if (L > 0 && W > 0) {
-        // Closed LWPOLYLINE rectangle from (0,0) to (L,W)
-        push('0','LWPOLYLINE','8',LAYER,'90','4','70','1',
-             '10','0','20','0',
-             '10',L,'20','0',
-             '10',L,'20',W,
-             '10','0','20',W);
-        drew = true;
-      }
-    } else if (cfg?.shape === 'circle') {
-      const D = asNum(cfg?.dims?.D);
-      if (D > 0) {
-        const R = D / 2;
-        // Center at (R,R) so extents are [0..D] in X and Y
-        push('0','CIRCLE','8',LAYER,'10',R,'20',R,'40',R);
-        drew = true;
-      }
-    } else if (cfg?.shape === 'polygon') {
-      const n = Math.max(3, asNum(cfg?.dims?.n) || 0);
-      const s = asNum(cfg?.dims?.A);
-      if (n >= 3 && s > 0) {
-        // Regular polygon with side length s
-        const R = s / (2 * Math.sin(Math.PI / n)); // circumradius in inches
-        const verts = [];
-        for (let i = 0; i < n; i++) {
-          const ang = (2 * Math.PI * i) / n; // start at angle 0
-          const x = R * Math.cos(ang);
-          const y = R * Math.sin(ang);
-          verts.push([x, y]);
-        }
-        // Shift so all coordinates are >= 0
-        const minX = Math.min(...verts.map(v => v[0]));
-        const minY = Math.min(...verts.map(v => v[1]));
-        const shifted = verts.map(([x, y]) => [x - minX, y - minY]);
-
-        push('0','LWPOLYLINE','8',LAYER,'90',n,'70','1');
-        for (const [x, y] of shifted) push('10', x, '20', y);
-        drew = true;
-      }
-    }
-
-    if (!drew) {
-      // Fallback label if config is missing or invalid
-      const label = `RCG ORDER — ${cfg?.shape || 'N/A'}`;
-      push('0','TEXT','8','0','10','0','20','0','40','1','1',label);
-    }
-
-    const footer = ['0','ENDSEC','0','EOF'];
-    const dxf = header.concat(ENT).concat(footer).join('\n');
-
-    const safeId = String(orderId || 'order').replace(/[^A-Za-z0-9_-]+/g, '').slice(-24);
-    return {
-      filename: `RCG_Order_${safeId || 'order'}.dxf`,
-      content: Buffer.from(dxf, 'utf8').toString('base64')
-    };
-  } catch {
-    return null;
-  }
-}
-
-
 // ---------------------------- Mail (Resend HTTP) ------------------------------
 /**
  * sendEmail({ to, bcc, subject, text, html, attachments?, replyTo? })
@@ -236,12 +152,12 @@ async function sendEmail({ to, bcc, subject, text, html, attachments = [], reply
   if (MAIL_MODE !== 'resend-api') {
     throw new Error('RESEND_API_KEY missing; cannot send email');
   }
-
+  // Format "to" to pass Resend validation
   const toList = Array.isArray(to) ? to : [to];
   const formattedTo = toList
     .filter(Boolean)
-    .map(addr => String(addr).trim())
-    .filter(addr => /<.+@.+>/.test(addr) || /.+@.+\..+/.test(addr));
+    .map(addr => /<.+@.+>/.test(addr) || /.+@.+\..+/.test(addr) ? addr : null)
+    .filter(Boolean);
 
   if (!formattedTo.length) {
     throw new Error('Invalid "to" field; must be "email@example.com" or "Name <email@example.com>"');
@@ -258,9 +174,7 @@ async function sendEmail({ to, bcc, subject, text, html, attachments = [], reply
     ...(attachments.length
       ? { attachments: attachments.map(a => ({ filename: a.filename, content: a.content })) }
       : {}),
-    headers: {
-      'List-Unsubscribe': `<mailto:${ORDER_NOTIFY_EMAIL}>`,
-    },
+    headers: { 'List-Unsubscribe': `<mailto:${ORDER_NOTIFY_EMAIL}>` },
     tags: [{ name: 'rcg-order' }],
   };
 
@@ -272,7 +186,6 @@ async function sendEmail({ to, bcc, subject, text, html, attachments = [], reply
     },
     body: JSON.stringify(body),
   });
-
   if (!resp.ok) {
     const errTxt = await resp.text().catch(() => '');
     throw new Error(`Resend API failed: ${resp.status} ${resp.statusText} ${errTxt}`);
@@ -299,9 +212,7 @@ function renderCustomerEmailHTML(cfg, session) {
       <div style="width:10px;height:10px;background:#ffc400;border-radius:2px"></div>
       <div style="font-size:18px;font-weight:700">Rock Creek Granite — Order Confirmation</div>
     </div>
-
     <p style="font-size:15px;line-height:1.5;margin:16px 0">Thanks for your order! We’ve received your payment and started your fabrication ticket.</p>
-
     <div style="background:#fafafa;border:1px solid #eee;padding:12px 14px;margin:12px 0">
       <div><strong>Stripe Session:</strong> ${session.id}</div>
       <div><strong>Total Paid:</strong> ${money(total)}</div>
@@ -313,13 +224,10 @@ function renderCustomerEmailHTML(cfg, session) {
       <div><strong>Backsplash:</strong> ${cfg?.backsplash ? 'Yes' : 'No'}</div>
       <div><strong>Stone:</strong> ${cfg?.color || 'N/A'}</div>
     </div>
-
     <p style="font-size:14px;color:#333">We’ll follow up with your production timeline and shipping details shortly.</p>
     <p style="font-size:13px;color:#666;margin-top:22px">Questions? Reply to this email or call (555) 555-5555.</p>
-  </div>
-  `;
+  </div>`;
 }
-
 function renderInternalEmailHTML(cfg, session) {
   const money = v => `$${(v/100).toFixed(2)}`;
   const lines = [
@@ -334,7 +242,6 @@ function renderInternalEmailHTML(cfg, session) {
     `Backsplash: ${cfg?.backsplash ? 'Yes' : 'No'}`,
     `Color: ${cfg?.color || 'N/A'}`,
   ];
-
   return `
   <div style="font-family:Arial,sans-serif;max-width:680px;margin:0 auto;padding:16px;color:#111">
     <div style="padding:12px 0 16px;border-bottom:2px solid #eee;display:flex;align-items:center;gap:10px">
@@ -342,24 +249,166 @@ function renderInternalEmailHTML(cfg, session) {
       <div style="font-size:18px;font-weight:800">NEW RCG ORDER</div>
     </div>
     <pre style="white-space:pre-wrap;background:#fafafa;border:1px solid #eee;padding:12px 14px;margin:14px 0;font-size:13px;line-height:1.4">${lines.join('\n')}</pre>
-  </div>
-  `;
+  </div>`;
 }
 
-function renderInternalEmailText(cfg, session) {
-  const money = v => `$${(v/100).toFixed(2)}`;
-  return [
-    `Stripe Session: ${session.id}`,
-    `Customer: ${session.customer_details?.email || 'N/A'}`,
-    `Total: ${money(session.amount_total || 0)} ${String(session.currency || 'usd').toUpperCase()}`,
-    `ZIP: ${cfg?.zip || 'N/A'}`,
-    `Shape: ${cfg?.shape || 'N/A'}`,
-    `Dims: ${cfg?.dims ? JSON.stringify(cfg.dims) : 'N/A'}`,
-    `Sinks: ${(cfg?.sinks || []).length}`,
-    `Edges: ${(cfg?.edges || []).join(', ') || 'None'}`,
-    `Backsplash: ${cfg?.backsplash ? 'Yes' : 'No'}`,
-    `Color: ${cfg?.color || 'N/A'}`
-  ].join('\n');
+// ------------------- Scaled DXF with splash, polished edges & cutouts ---------
+
+// Default sink sizes (inches). If the client passes sizes, those override.
+// We shrink each dimension by 0.5" for the actual cutout.
+const DEFAULT_SINK_SIZES = {
+  'bath-oval':   { w: 17, h: 14, type: 'oval' },
+  'bath-rect':   { w: 18, h: 13, type: 'rect' },
+  'kitchen-rect':{ w: 22, h: 16, type: 'rect' },
+};
+
+function getSinkCutoutDims(sink) {
+  // If client provided explicit cutout dims, prefer them
+  const w0 = Number(sink?.cutoutW || sink?.w || 0);
+  const h0 = Number(sink?.cutoutH || sink?.h || 0);
+  const t0 = sink?.type;
+  if (w0 > 0 && h0 > 0) {
+    return { w: Math.max(0, w0 - 0.5), h: Math.max(0, h0 - 0.5), type: t0 || 'rect' };
+  }
+  // Otherwise fallback to defaults by key
+  const d = DEFAULT_SINK_SIZES[sink?.key] || null;
+  if (!d) return null;
+  return { w: Math.max(0, d.w - 0.5), h: Math.max(0, d.h - 0.5), type: d.type };
+}
+
+// --- Scaled DXF generator: 1:1 inches; draws outline, 4" backsplash, polished edges, sink cutouts
+function makeDxfAttachmentFromConfig(cfg, orderId = 'order') {
+  try {
+    const ENT = [];
+    const push = (...a) => { for (const v of a) ENT.push(String(v)); };
+
+    // Header with inches
+    const header = [
+      '0','SECTION','2','HEADER',
+      '9','$INSUNITS','70','1', // 1 = Inches
+      '0','ENDSEC',
+      '0','SECTION','2','ENTITIES'
+    ];
+
+    const addRectOutline = (x0,y0,w,h,layer,closed=true) => {
+      const n = 4;
+      push('0','LWPOLYLINE','8',layer,'90',n,'70', closed ? '1' : '0',
+           '10',x0,'20',y0,
+           '10',x0+w,'20',y0,
+           '10',x0+w,'20',y0+h,
+           '10',x0,'20',y0+h);
+    };
+    const addLine = (x1,y1,x2,y2,layer) => {
+      push('0','LINE','8',layer,'10',x1,'20',y1,'11',x2,'21',y2);
+    };
+    const addEllipse = (cx,cy,rx,ry,layer) => {
+      const major = rx >= ry ? rx : ry;
+      const ratio = major ? ( (rx>=ry ? ry : rx) / major ) : 1;
+      const majorX = (rx >= ry) ? major : 0;
+      const majorY = (rx >= ry) ? 0 : major;
+      push('0','ELLIPSE','8',layer,
+           '10',cx,'20',cy,'30','0',
+           '11',majorX,'21',majorY,'31','0',
+           '40',ratio,'41','0','42',String(2*Math.PI));
+    };
+
+    let drewAnything = false;
+
+    // Only full detailing for rectangle slabs (your configurator primary path)
+    if (cfg?.shape === 'rectangle') {
+      const L = Math.max(0, Number(cfg?.dims?.L) || 0);
+      const W = Math.max(0, Number(cfg?.dims?.W) || 0);
+      // Slab outline
+      addRectOutline(0, 0, L, W, 'OUTLINE', true);
+      drewAnything = true;
+
+      // Polished edges (draw lines along polished sides)
+      const edges = Array.isArray(cfg?.edges) ? cfg.edges : [];
+      if (edges.includes('bottom')) addLine(0, 0, L, 0, 'POLISHED');
+      if (edges.includes('top'))    addLine(0, W, L, W, 'POLISHED');
+      if (edges.includes('left'))   addLine(0, 0, 0, W, 'POLISHED');
+      if (edges.includes('right'))  addLine(L, 0, L, W, 'POLISHED');
+
+      // 4" backsplash on unpolished sides if backsplash enabled
+      if (cfg?.backsplash) {
+        const unpol = ['top','right','bottom','left'].filter(k => !edges.includes(k));
+        for (const side of unpol) {
+          if (side === 'bottom') addRectOutline(0, 0, L, 4, 'BACKSPLASH');
+          if (side === 'top')    addRectOutline(0, W-4, L, 4, 'BACKSPLASH');
+          if (side === 'left')   addRectOutline(0, 0, 4, W, 'BACKSPLASH');
+          if (side === 'right')  addRectOutline(L-4, 0, 4, W, 'BACKSPLASH');
+        }
+      }
+
+      // Sink cutouts on layer CUTOUT
+      const sinks = Array.isArray(cfg?.sinks) ? cfg.sinks : [];
+      for (const s of sinks) {
+        const cx = Number(s?.x);
+        const cy = Number(s?.y);
+        if (!isFinite(cx) || !isFinite(cy)) continue;
+
+        const dims = getSinkCutoutDims(s);
+        if (!dims || dims.w <= 0 || dims.h <= 0) continue;
+
+        if (dims.type === 'oval') {
+          const rx = dims.w / 2;
+          const ry = dims.h / 2;
+          // ELLIPSE centered at (cx,cy)
+          addEllipse(cx, cy, rx, ry, 'CUTOUT');
+        } else {
+          // Rectangular cutout centered at (cx,cy)
+          const x0 = cx - dims.w / 2;
+          const y0 = cy - dims.h / 2;
+          addRectOutline(x0, y0, dims.w, dims.h, 'CUTOUT');
+        }
+      }
+    } else if (cfg?.shape === 'circle') {
+      // Basic circle slab (no splash/edges/cutouts logic here)
+      const D = Math.max(0, Number(cfg?.dims?.D) || 0);
+      const R = D / 2;
+      addEllipse(R, R, R, R, 'OUTLINE'); // circle as ellipse with rx=ry
+      drewAnything = true;
+    } else if (cfg?.shape === 'polygon') {
+      // Regular polygon slab outline (no splash/cutouts for now)
+      const n = Math.max(3, Number(cfg?.dims?.n) || 0);
+      const s = Math.max(0, Number(cfg?.dims?.A) || 0);
+      if (n >= 3 && s > 0) {
+        // build vertices
+        const R = s / (2 * Math.sin(Math.PI / n));
+        const verts = [];
+        for (let i = 0; i < n; i++) {
+          const ang = (2 * Math.PI * i) / n;
+          const x = R * Math.cos(ang);
+          const y = R * Math.sin(ang);
+          verts.push([x, y]);
+        }
+        const minX = Math.min(...verts.map(v => v[0]));
+        const minY = Math.min(...verts.map(v => v[1]));
+        const shifted = verts.map(([x,y]) => [x - minX, y - minY]);
+
+        push('0','LWPOLYLINE','8','OUTLINE','90',n,'70','1');
+        for (const [x,y] of shifted) push('10',x,'20',y);
+        drewAnything = true;
+      }
+    }
+
+    if (!drewAnything) {
+      const label = `RCG ORDER — ${cfg?.shape || 'N/A'}`;
+      push('0','TEXT','8','0','10','0','20','0','40','1','1',label);
+    }
+
+    const footer = ['0','ENDSEC','0','EOF'];
+    const dxf = header.concat(ENT).concat(footer).join('\n');
+
+    // Shortened order id: last 8 safe chars
+    const shortId = String(orderId || 'order').replace(/[^A-Za-z0-9_-]+/g, '').slice(-8) || 'order';
+    return {
+      filename: `RCG_Order_${shortId}.dxf`,
+      content: Buffer.from(dxf, 'utf8').toString('base64')
+    };
+  } catch {
+    return null;
+  }
 }
 
 // ---------- Stripe Webhook (must stay BEFORE express.json) ----------
@@ -368,10 +417,11 @@ app.post(
   express.raw({ type: 'application/json' }),
   async (req, res) => {
     const sig = req.headers['stripe-signature'];
+    const secret = process.env.STRIPE_WEBHOOK_SECRET;
 
     let event;
     try {
-      event = stripe.webhooks.constructEvent(req.body, sig, STRIPE_WEBHOOK_SECRET);
+      event = stripe.webhooks.constructEvent(req.body, sig, secret);
     } catch (err) {
       console.error('Webhook verify failed:', err.message);
       return res.status(400).send(`Webhook Error: ${err.message}`);
@@ -392,11 +442,8 @@ app.post(
             cfgB64 = joined;
           }
           let config = null;
-          try {
-            config = cfgB64 ? JSON.parse(Buffer.from(cfgB64, 'base64').toString('utf8')) : null;
-          } catch {
-            config = null;
-          }
+          try { config = cfgB64 ? JSON.parse(Buffer.from(cfgB64, 'base64').toString('utf8')) : null; }
+          catch { config = null; }
 
           // -------- Friendly fields for emails --------
           const orderId = session.id;
@@ -404,17 +451,39 @@ app.post(
           const currency = String(session.currency || 'usd').toUpperCase();
           const customerEmail = session.customer_details?.email || '';
           const customerName = session.customer_details?.name || '';
-          const brandName = MAIL_FROM_NAME || 'Rock Creek Granite';
+          const zip = config?.zip || md.zip || '';
 
-          // ================== INTERNAL EMAIL (orders@) ==================
+          const dimsTxt =
+            config?.shape === 'rectangle'
+              ? `${config?.dims?.L}" × ${config?.dims?.W}"`
+              : config?.shape === 'circle'
+              ? `${config?.dims?.D}" Ø`
+              : config?.shape
+              ? `${config?.dims?.n}-sides, ${config?.dims?.A}" side`
+              : 'N/A';
+
+          const brandName = process.env.MAIL_FROM_NAME || 'Rock Creek Granite';
+
+          // --- Email bodies
+          const internalSubject = `${process.env.NODE_ENV === 'production' ? '' : '[TEST] '}Order confirmed — ${orderId}`;
+          const internalHtml = renderInternalEmailHTML(config || {}, session);
+          const internalText =
+            `New order confirmed\n\n` +
+            `Stripe Session: ${orderId}\n` +
+            `Customer: ${customerEmail || 'N/A'}\n` +
+            `Total: $${orderTotalUSD} ${currency}\n` +
+            `ZIP: ${zip || 'N/A'}\n` +
+            `Shape: ${config?.shape || 'N/A'}\n` +
+            `Size: ${dimsTxt}\n` +
+            `Sinks: ${config?.sinks?.length || 0}\n` +
+            `Edges: ${Array.isArray(config?.edges) ? config.edges.join(', ') : 'None'}\n` +
+            `Backsplash: ${config?.backsplash ? 'Yes' : 'No'}\n`;
+
+          // -------- Attach DXF (generated server-side)
+          const dxfAttachment = makeDxfAttachmentFromConfig(config, orderId);
+
+          // ================== INTERNAL EMAIL ==================
           try {
-            const internalSubject = `${process.env.NODE_ENV === 'production' ? '' : '[TEST] '}Order confirmed — ${orderId}`;
-            const internalHtml = renderInternalEmailHTML(config, session);
-            const internalText = renderInternalEmailText(config, session);
-
-            // Attach a tiny fallback DXF so you always have *something* in the inbox
-            const dxfAttachment = makeDxfAttachmentFromConfig(config, orderId);
-
             await sendEmail({
               to: ORDER_NOTIFY_EMAIL,
               subject: internalSubject,
@@ -427,22 +496,22 @@ app.post(
             console.error('[mail] internal order email failed:', e);
           }
 
-          // ================== CUSTOMER EMAIL (if we have email) ==================
+          // ================== CUSTOMER EMAIL ==================
           if (customerEmail) {
             try {
-              const customerSubject = `${process.env.NODE_ENV === 'production' ? '' : '[TEST] '}Thanks! We received your order — ${orderId}`;
-              const customerHtml = renderCustomerEmailHTML(config, session);
-              const customerText =
-                `Thanks — we received your order!\n\n` +
-                `Order #: ${orderId}\n` +
-                `Total: $${orderTotalUSD} ${currency}\n`;
-
               await sendEmail({
                 to: customerEmail,
-                subject: customerSubject,
-                html: customerHtml,
-                text: customerText,
-                replyTo: ORDER_NOTIFY_EMAIL
+                subject: `${process.env.NODE_ENV === 'production' ? '' : '[TEST] '}Thanks! We received your order — ${orderId}`,
+                html: renderCustomerEmailHTML(config || {}, session),
+                text:
+                  `Thanks — we received your order!\n\n` +
+                  `Order #: ${orderId}\n` +
+                  `Total: $${orderTotalUSD} ${currency}\n` +
+                  `Ship ZIP: ${zip || 'N/A'}\n` +
+                  `Shape: ${config?.shape || 'N/A'}\n` +
+                  `Size: ${dimsTxt}\n` +
+                  `Sinks: ${config?.sinks?.length || 0}\n` +
+                  `Backsplash: ${config?.backsplash ? 'Yes' : 'No'}\n`
               });
               console.log('[mail] customer email sent ->', customerEmail);
             } catch (e) {
@@ -457,9 +526,8 @@ app.post(
             id: orderId,
             email: customerEmail,
             amount_total: session.amount_total,
-            cfg_summary: config ? { shape: config.shape, zip: config?.zip || md.zip || '' } : null
+            cfg_summary: config ? { shape: config.shape, zip } : null
           });
-
           break;
         }
 
@@ -522,7 +590,8 @@ app.post('/api/create-checkout-session', async (req, res) => {
       });
     }
 
-    // compact metadata (no pricing)
+    // Compact metadata (no pricing). If the embed includes per-sink cutout sizes/types,
+    // keep them so server doesn't need updates when sizes change in the client.
     const compactCfg = {
       shape: config.shape,
       dims: config.dims,
@@ -533,6 +602,10 @@ app.post('/api/create-checkout-session', async (req, res) => {
             y: Number(s.y?.toFixed?.(2) ?? s.y),
             faucet: s.faucet ?? '1',
             spread: s.spread ?? null,
+            // optional (if provided by the configurator):
+            cutoutW: s.cutoutW ?? s.w ?? undefined,
+            cutoutH: s.cutoutH ?? s.h ?? undefined,
+            type: s.type ?? undefined // 'oval' | 'rect'
           }))
         : [],
       color: config.color,
@@ -575,15 +648,12 @@ app.get('/api/checkout-session', async (req, res) => {
   }
 });
 
-// --------- Email DXF (uses sendEmail helper) ---------
+// ---------------------------- API: Email DXF (client-provided base64) ---------
 app.post('/api/email-dxf', async (req, res) => {
   try {
     const { to, bcc, subject, config, dxfBase64 } = req.body || {};
-    if (!to || !dxfBase64) {
-      return res.status(400).json({ error: 'Missing to or dxfBase64' });
-    }
+    if (!to || !dxfBase64) return res.status(400).json({ error: 'Missing to or dxfBase64' });
 
-    const brand = MAIL_FROM_NAME || 'Rock Creek Granite';
     const dimsTxt =
       config?.shape === 'rectangle'
         ? `${config?.dims?.L}" × ${config?.dims?.W}"`
@@ -595,7 +665,7 @@ app.post('/api/email-dxf', async (req, res) => {
 
     const html = `
       <div style="font-family:Arial,Helvetica,sans-serif;max-width:640px;margin:0 auto;padding:16px;color:#111;">
-        <h2 style="margin:0 0 12px;">${brand} — DXF attached</h2>
+        <h2 style="margin:0 0 12px;">Rock Creek Granite — DXF attached</h2>
         <p style="margin:0 0 10px;">Auto-generated DXF cut sheet is attached.</p>
         <ul style="margin:0;padding-left:16px">
           <li>Shape: ${config?.shape || 'N/A'}</li>
@@ -604,34 +674,16 @@ app.post('/api/email-dxf', async (req, res) => {
       </div>`;
     const text = `DXF attached.\nShape: ${config?.shape || 'N/A'}\nSize: ${dimsTxt}\n`;
 
-    const att = { filename: 'RCG_CutSheet.dxf', content: dxfBase64 }; // base64 string
+    const att = { filename: 'RCG_CutSheet.dxf', content: dxfBase64 };
 
-    // primary recipient
-    await sendEmail({
-      to,
-      subject: subject || 'RCG DXF',
-      html,
-      text,
-      attachments: [att]
-    });
-    console.log('[mail] DXF email sent ->', to);
-
-    // optional bcc as separate send
+    await sendEmail({ to, subject: subject || 'RCG DXF', html, text, attachments: [att] });
     if (bcc) {
       try {
-        await sendEmail({
-          to: bcc,
-          subject: subject || 'RCG DXF (copy)',
-          html,
-          text,
-          attachments: [att]
-        });
-        console.log('[mail] DXF email (bcc) sent ->', bcc);
+        await sendEmail({ to: bcc, subject: subject || 'RCG DXF (copy)', html, text, attachments: [att] });
       } catch (e) {
         console.error('[mail] DXF email bcc failed:', e);
       }
     }
-
     res.json({ ok: true });
   } catch (e) {
     console.error('email-dxf failed:', e);
@@ -679,12 +731,7 @@ app.get('/.well-known/mail-debug', async (req, res) => {
   try {
     if (MAIL_MODE !== 'resend-api') return res.status(500).json({ ok:false, error: 'RESEND_API_KEY missing' });
     const to = req.query.to || ORDER_NOTIFY_EMAIL;
-    const r = await sendEmail({
-      to,
-      subject: '[RCG] Mail debug OK',
-      text: 'This is a test email from /.well-known/mail-debug',
-      html: '<strong>Mail debug OK</strong>',
-    });
+    const r = await sendEmail({ to, subject: '[RCG] Mail debug OK', text: 'This is a test', html: '<strong>Mail debug OK</strong>' });
     res.json({ ok: true, to, r });
   } catch (e) {
     res.status(500).json({ ok:false, error: String(e.message || e) });
