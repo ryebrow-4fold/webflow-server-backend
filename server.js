@@ -276,136 +276,130 @@ function getSinkCutoutDims(sink) {
   return { w: Math.max(0, d.w - 0.5), h: Math.max(0, d.h - 0.5), type: d.type };
 }
 
-// --- Scaled DXF generator: 1:1 inches; draws outline, OUTSIDE 4" backsplash with 1" gap,
-//     polished edges, and sink cutouts (oval/rect) on proper layers.
-function makeDxfAttachmentFromConfig(cfg, orderId = 'order') {
-  try {
-    const ENT = [];
-    const push = (...a) => { for (const v of a) ENT.push(String(v)); };
-
-    // Header with inches
-    const header = [
-      '0','SECTION','2','HEADER',
-      '9','$INSUNITS','70','1', // 1 = Inches
-      '0','ENDSEC',
-      '0','SECTION','2','ENTITIES'
-    ];
-
-    const addRectOutline = (x0,y0,w,h,layer,closed=true) => {
-      const n = 4;
-      push('0','LWPOLYLINE','8',layer,'90',n,'70', closed ? '1' : '0',
-           '10',x0,'20',y0,
-           '10',x0+w,'20',y0,
-           '10',x0+w,'20',y0+h,
-           '10',x0,'20',y0+h);
-    };
-    const addLine = (x1,y1,x2,y2,layer) => {
-      push('0','LINE','8',layer,'10',x1,'20',y1,'11',x2,'21',y2);
-    };
-    const addEllipse = (cx,cy,rx,ry,layer) => {
-      const major = rx >= ry ? rx : ry;
-      const ratio = major ? ((rx>=ry ? ry : rx) / major) : 1;
-      const majorX = (rx >= ry) ? major : 0;
-      const majorY = (rx >= ry) ? 0 : major;
-      push('0','ELLIPSE','8',layer,
-           '10',cx,'20',cy,'30','0',
-           '11',majorX,'21',majorY,'31','0',
-           '40',ratio,'41','0','42',String(2*Math.PI));
-    };
-
-    let drewAnything = false;
-
-    if (cfg?.shape === 'rectangle') {
-      const L = Math.max(0, Number(cfg?.dims?.L) || 0);
-      const W = Math.max(0, Number(cfg?.dims?.W) || 0);
-      // Slab outline (origin bottom-left)
-      addRectOutline(0, 0, L, W, 'OUTLINE', true);
-      drewAnything = true;
-
-      // Polished edges (draw lines along polished sides)
-      const edges = Array.isArray(cfg?.edges) ? cfg.edges : [];
-      if (edges.includes('bottom')) addLine(0, 0, L, 0, 'POLISHED');
-      if (edges.includes('top'))    addLine(0, W, L, W, 'POLISHED');
-      if (edges.includes('left'))   addLine(0, 0, 0, W, 'POLISHED');
-      if (edges.includes('right'))  addLine(L, 0, L, W, 'POLISHED');
-
-      // OUTSIDE 4" backsplash with 1" gap on *unpolished* sides
-      // gap = 1", depth = 4"
-      if (cfg?.backsplash) {
-        const GAP = 1, DEPTH = 4;
-        const unpol = ['top','right','bottom','left'].filter(k => !edges.includes(k));
-        for (const side of unpol) {
-          if (side === 'bottom') addRectOutline(0, -(GAP+DEPTH), L, DEPTH, 'BACKSPLASH');        // y: -5..-1
-          if (side === 'top')    addRectOutline(0, W + GAP,      L, DEPTH, 'BACKSPLASH');        // y: W+1..W+5
-          if (side === 'left')   addRectOutline(-(GAP+DEPTH), 0, DEPTH, W, 'BACKSPLASH');        // x: -5..-1
-          if (side === 'right')  addRectOutline(L + GAP, 0,      DEPTH, W, 'BACKSPLASH');        // x: L+1..L+5
-        }
-      }
-
-      // Sink cutouts on layer CUTOUT
-      const sinks = Array.isArray(cfg?.sinks) ? cfg.sinks : [];
-      for (const s of sinks) {
-        const cx = Number(s?.x);
-        const cy = Number(s?.y);
-        if (!isFinite(cx) || !isFinite(cy)) continue;
-
-        const dims = getSinkCutoutDims(s);
-        if (!dims || dims.w <= 0 || dims.h <= 0) continue;
-
-        if (dims.type === 'oval') {
-          const rx = dims.w / 2;
-          const ry = dims.h / 2;
-          addEllipse(cx, cy, rx, ry, 'CUTOUT');
-        } else {
-          const x0 = cx - dims.w / 2;
-          const y0 = cy - dims.h / 2;
-          addRectOutline(x0, y0, dims.w, dims.h, 'CUTOUT');
-        }
-      }
-    } else if (cfg?.shape === 'circle') {
-      const D = Math.max(0, Number(cfg?.dims?.D) || 0);
-      const R = D / 2;
-      addEllipse(R, R, R, R, 'OUTLINE');
-      drewAnything = true;
-    } else if (cfg?.shape === 'polygon') {
-      const n = Math.max(3, Number(cfg?.dims?.n) || 0);
-      const s = Math.max(0, Number(cfg?.dims?.A) || 0);
-      if (n >= 3 && s > 0) {
-        const R = s / (2 * Math.sin(Math.PI / n));
-        const verts = [];
-        for (let i = 0; i < n; i++) {
-          const ang = (2 * Math.PI * i) / n;
-          const x = R * Math.cos(ang);
-          const y = R * Math.sin(ang);
-          verts.push([x, y]);
-        }
-        const minX = Math.min(...verts.map(v => v[0]));
-        const minY = Math.min(...verts.map(v => v[1]));
-        const shifted = verts.map(([x,y]) => [x - minX, y - minY]);
-
-        push('0','LWPOLYLINE','8','OUTLINE','90',n,'70','1');
-        for (const [x,y] of shifted) push('10',x,'20',y);
-        drewAnything = true;
-      }
-    }
-
-    if (!drewAnything) {
-      const label = `RCG ORDER — ${cfg?.shape || 'N/A'}`;
-      push('0','TEXT','8','0','10','0','20','0','40','1','1',label);
-    }
-
-    const footer = ['0','ENDSEC','0','EOF'];
-    const dxf = header.concat(ENT).concat(footer).join('\n');
-
-    // Shortened order id in filename
-    const shortId = String(orderId || 'order').replace(/[^A-Za-z0-9_-]+/g, '').slice(-8) || 'order';
-    return {
-      filename: `RCG_Order_${shortId}.dxf`,
-      content: Buffer.from(dxf, 'utf8').toString('base64')
-    };
-  } catch {
-    return null;
+// --- DXF generator with faucet holes, splash outside, polished edges ---
+function makeDxfAttachmentFromConfig(cfg, orderId = '') {
+  if (!cfg || cfg.shape !== 'rectangle') {
+    // keep simple fallback if not a rectangle job
+    const txt = 'RCG ORDER (non-rectangle)'; 
+    const dxf = ['0','SECTION','2','ENTITIES','0','TEXT','8','0','10','0','20','0','40','12','1',txt,'0','ENDSEC','0','EOF'].join('\n');
+    return { filename: `RCG_${(orderId||'').slice(-8)}.dxf`, content: Buffer.from(dxf,'utf8').toString('base64') };
   }
+
+  // ---------- config ----------
+  const L = +cfg?.dims?.L || 0; // inches
+  const W = +cfg?.dims?.W || 0;
+  const sinks = Array.isArray(cfg?.sinks) ? cfg.sinks : [];
+  const edges = Array.isArray(cfg?.edges) ? cfg.edges : [];
+  const backsplash = !!cfg?.backsplash;
+
+  // Faucet defaults
+  const HOLE_D = 1.375;                     // 1-3/8" typical faucet hole
+  const HOLE_R = HOLE_D / 2;
+  const FAUCET_SETBACK = 2;                 // 2" behind sink cutout
+  const OVAL_SEGMENTS = 72;                 // smoothness for oval approximation
+
+  // If a sink didn’t get cutout sizes client-side, use “shrunk by 0.5"” fallback
+  const FALLBACK = {
+    'bath-oval':   { type:'oval', w:16.5, h:13.5 },
+    'bath-rect':   { type:'rect', w:17.5, h:12.5 },
+    'kitchen-rect':{ type:'rect', w:21.5, h:15.5 },
+  };
+
+  // ---------- DXF helpers ----------
+  const out = [];
+  const push = (...a) => out.push(...a);
+
+  function line(layer, x1,y1,x2,y2){
+    push('0','LINE','8',layer,'10',x1,'20',y1,'11',x2,'21',y2);
+  }
+  function circle(layer, cx,cy,r){
+    push('0','CIRCLE','8',layer,'10',cx,'20',cy,'40',r);
+  }
+  function lwpoly(layer, pts, closed){
+    push('0','LWPOLYLINE','8',layer,'90',String(pts.length),'70', closed? '1':'0');
+    for (const [x,y] of pts){ push('10',x,'20',y); }
+  }
+  function rect(layer, x, y, w, h){
+    lwpoly(layer, [[x,y],[x+w,y],[x+w,y+h],[x,y+h]], true);
+  }
+  function oval(layer, cx, cy, rx, ry, segs = OVAL_SEGMENTS){
+    const pts = [];
+    for (let i=0;i<segs;i++){
+      const t = (i/segs)*Math.PI*2;
+      pts.push([cx + rx*Math.cos(t), cy + ry*Math.sin(t)]);
+    }
+    lwpoly(layer, pts, true);
+  }
+
+  // ---------- ENTITIES ----------
+  push('0','SECTION','2','ENTITIES');
+
+  // Slab outline (0,0) to (L,W)
+  rect('SLAB', 0, 0, L, W);
+
+  // Polished edges (draw over the slab edges)
+  if (edges.includes('top'))    line('POLISHED', 0, W, L, W);
+  if (edges.includes('bottom')) line('POLISHED', 0, 0, L, 0);
+  if (edges.includes('left'))   line('POLISHED', 0, 0, 0, W);
+  if (edges.includes('right'))  line('POLISHED', L, 0, L, W);
+
+  // External backsplash (4" tall), 1" above slab
+  if (backsplash) {
+    rect('SPLASH', 0, W + 1, L, 4);
+  }
+
+  // Sinks & faucet holes
+  for (const s of sinks) {
+    const sx = +s.x || 0;
+    const sy = +s.y || 0;
+
+    // determine cutout sizing
+    const key = s.key || '';
+    const t   = s.type || (FALLBACK[key]?.type) || 'rect';
+    const w   = +s.cutoutW || FALLBACK[key]?.w || 16;
+    const h   = +s.cutoutH || FALLBACK[key]?.h || 13;
+    const rx  = w/2, ry = h/2;
+
+    // cutout outline
+    if (t === 'oval') {
+      oval('CUTOUT', sx, sy, rx, ry);
+    } else {
+      rect('CUTOUT', sx - rx, sy - ry, w, h);
+    }
+
+    // faucet holes
+    const faucet = parseInt(s.faucet == null ? 1 : s.faucet, 10) || 1; // default to 1
+    const spread = +s.spread || (faucet === 3 ? 8 : 0);                // inches between L/R
+    const yTopOfSink = sy + ry;
+    const holeY = yTopOfSink + FAUCET_SETBACK;
+
+    if (faucet === 1) {
+      circle('FAUCET', sx, holeY, HOLE_R);
+    } else if (faucet === 3) {
+      const half = spread / 2;
+      circle('FAUCET', sx, holeY, HOLE_R);         // center
+      circle('FAUCET', sx - half, holeY, HOLE_R);  // left
+      circle('FAUCET', sx + half, holeY, HOLE_R);  // right
+    } else {
+      // For any other N, just draw N holes centered and spaced 1.25"
+      const gap = 1.25;
+      const total = (faucet-1)*gap;
+      for (let i=0;i<faucet;i++){
+        const x = sx - total/2 + i*gap;
+        circle('FAUCET', x, holeY, HOLE_R);
+      }
+    }
+  }
+
+  // close ENTITIES
+  push('0','ENDSEC','0','EOF');
+
+  // Filename with short ID
+  const short = (orderId||'').split('_').pop().slice(-8);
+  return {
+    filename: `RCG_${short || 'order'}.dxf`,
+    content: Buffer.from(out.join('\n'), 'utf8').toString('base64')
+  };
 }
 
 
