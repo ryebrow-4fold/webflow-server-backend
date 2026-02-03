@@ -401,82 +401,95 @@ app.post(
     try {
       switch (event.type) {
         case 'checkout.session.completed': {
-          const session = event.data.object;
+  const session = event.data.object;
 
-          // Reassemble compact config from Stripe metadata
-          const cfg = reassembleCfgFromMeta(session.metadata) || {};
-          const orderId = session.id;
-          const orderTotalUSD = (session.amount_total / 100).toFixed(2);
-          const currency = String(session.currency || 'usd').toUpperCase();
-          const customerEmail = session.customer_details?.email || '';
+  // ---- Reassemble compact config from Stripe metadata ----
+  const md = session.metadata || {};
+  let config = null;
+  try {
+    config = reassembleCfgFromMeta(md);
+  } catch {
+    config = null;
+  }
 
-          // -------- INTERNAL EMAIL (with DXF) --------
-          const internalSubject = `${process.env.NODE_ENV === 'production' ? '' : '[TEST] '}Order confirmed — ${orderId}`;
-          const internalHtml = renderInternalEmailHTML(cfg, session);
-          const internalText =
-            `New order confirmed\n\n` +
-            `Stripe Session: ${orderId}\n` +
-            `Customer: ${customerEmail || 'N/A'}\n` +
-            `Total: $${orderTotalUSD} ${currency}\n` +
-            `ZIP: ${cfg?.zip || 'N/A'}\n` +
-            `Shape: ${cfg?.shape || 'N/A'}\n` +
-            `Size: ${cfg?.dims ? JSON.stringify(cfg.dims) : 'N/A'}\n` +
-            `Sinks: ${(cfg?.sinks || []).length}\n` +
-            `Edges: ${(cfg?.edges || []).join(', ') || 'None'}\n` +
-            `Backsplash: ${cfg?.backsplash ? 'Yes' : 'No'}\n` +
-            `Faucets:\n${sinksFaucetList(cfg)}\n`;
+  // ---- Friendly fields for emails ----
+  const orderId = session.id;
+  const currency = String(session.currency || 'usd').toUpperCase();
+  const orderTotalUSD = ((session.amount_total || 0) / 100).toFixed(2);
 
-          try {
-            const dxfAttachment = makeDxfAttachmentFromConfig(cfg, session.id);
-            await sendEmail({
-              to: process.env.ORDER_NOTIFY_EMAIL || process.env.BUSINESS_EMAIL,
-              subject: internalSubject,
-              html: internalHtml,
-              text: internalText,
-              attachments: dxfAttachment ? [dxfAttachment] : []
-            });
-            console.log('[mail] internal order email sent', dxfAttachment ? 'with DXF' : '(no DXF)');
-          } catch (e) {
-            console.error('[mail] internal order email failed:', e);
-          }
+  // Stripe can put email in several places; try them in order:
+  const customerEmail =
+    (session.customer_details && session.customer_details.email) ||
+    session.customer_email ||
+    md.customer_email ||
+    md.email ||
+    '';
 
-          // -------- CUSTOMER EMAIL --------
-          if (customerEmail) {
-            try {
-              const customerSubject = `${process.env.NODE_ENV === 'production' ? '' : '[TEST] '}Thanks! We received your order — ${orderId}`;
-              await sendEmail({
-                to: customerEmail,
-                subject: customerSubject,
-                html: renderCustomerEmailHTML(cfg, session),
-                text:
-                  `Thanks — we received your order!\n\n` +
-                  `Order #: ${orderId}\n` +
-                  `Total: $${orderTotalUSD} ${currency}\n` +
-                  `Ship ZIP: ${cfg?.zip || 'N/A'}\n` +
-                  `Shape: ${cfg?.shape || 'N/A'}\n` +
-                  `Size: ${cfg?.dims ? JSON.stringify(cfg.dims) : 'N/A'}\n` +
-                  `Sinks: ${(cfg?.sinks || []).length}\n` +
-                  `Backsplash: ${cfg?.backsplash ? 'Yes' : 'No'}\n` +
-                  `Faucets:\n${sinksFaucetList(cfg)}\n`
-              });
-              console.log('[mail] customer email sent ->', customerEmail);
-            } catch (e) {
-              console.error('[mail] customer email failed:', e);
-            }
-          } else {
-            console.log('[mail] no customer email on session; skipping customer send');
-          }
+  const brandName = process.env.MAIL_FROM_NAME || 'Rock Creek Granite';
 
-          // Log compact summary
-          console.log('[stripe] checkout.session.completed', {
-            id: orderId,
-            email: customerEmail,
-            amount_total: session.amount_total,
-            cfg_summary: cfg ? { shape: cfg.shape, zip: cfg?.zip || session.metadata?.zip || '' } : null
-          });
+  // ================== INTERNAL EMAIL (orders@) ==================
+  try {
+    const internalSubject = `${process.env.NODE_ENV === 'production' ? '' : '[TEST] '}Order confirmed — ${orderId}`;
+    const internalHtml = renderInternalEmailHTML(config, session);
+    const internalText =
+      `New order confirmed\n\n` +
+      `Stripe Session: ${orderId}\n` +
+      `Customer: ${customerEmail || 'N/A'}\n` +
+      `Total: $${orderTotalUSD} ${currency}\n`;
 
-          break;
-        }
+    // Fallback DXF built from config (so orders always gets a DXF)
+    const dxfAttachment = makeDxfAttachmentFromConfig(config); // safe even if config is null
+
+    await sendEmail({
+      to: process.env.ORDER_NOTIFY_EMAIL || process.env.BUSINESS_EMAIL || 'orders@rockcreekgranite.com',
+      subject: internalSubject,
+      html: internalHtml,
+      text: internalText,
+      attachments: dxfAttachment ? [dxfAttachment] : [],
+      replyTo: process.env.ORDER_NOTIFY_EMAIL || 'orders@rockcreekgranite.com',
+    });
+
+    console.log('[mail] internal order email sent', dxfAttachment ? 'with DXF' : '(no DXF)');
+  } catch (e) {
+    console.error('[mail] internal order email failed:', e);
+  }
+
+  // ================== CUSTOMER EMAIL (designed) ==================
+  if (customerEmail && /.+@.+\..+/.test(customerEmail)) {
+    try {
+      const customerSubject = `${process.env.NODE_ENV === 'production' ? '' : '[TEST] '}Thanks! We received your order — ${orderId}`;
+      const customerHtml = renderCustomerEmailHTML(config, session);
+      const customerText =
+        `Thanks — we received your order!\n\n` +
+        `Order #: ${orderId}\n` +
+        `Total: $${orderTotalUSD} ${currency}\n`;
+
+      await sendEmail({
+        to: customerEmail,                        // IMPORTANT: this fires to the purchaser
+        subject: customerSubject,
+        html: customerHtml,
+        text: customerText,
+        replyTo: process.env.ORDER_NOTIFY_EMAIL || 'orders@rockcreekgranite.com',
+      });
+
+      console.log('[mail] customer email sent ->', customerEmail);
+    } catch (e) {
+      console.error('[mail] customer email failed:', e);
+    }
+  } else {
+    console.log('[mail] no valid customer email on session; skipping customer send');
+  }
+
+  // ---- Log compact summary
+  console.log('[stripe] checkout.session.completed', {
+    id: orderId,
+    email: customerEmail || '(none)',
+    amount_total: session.amount_total,
+    cfg_summary: config ? { shape: config.shape, zip: config?.zip || md.zip || '' } : null
+  });
+
+  break;
+}
 
         default: {
           if (process.env.NODE_ENV !== 'production') {
