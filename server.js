@@ -6,6 +6,27 @@ import express from 'express';
 import cors from 'cors';
 import Stripe from 'stripe';
 
+// Find the best available customer email from a Checkout Session
+async function getCustomerEmailFromSession(session) {
+  // 1) Most common: collected by Checkout
+  if (session?.customer_details?.email) return session.customer_details.email;
+
+  // 2) Provided when creating the session
+  if (session?.customer_email) return session.customer_email;
+
+  // 3) Fallback: fetch the Customer object if present
+  try {
+    if (typeof session?.customer === 'string' && session.customer.startsWith('cus_')) {
+      const cust = await stripe.customers.retrieve(session.customer);
+      if (!cust.deleted && cust.email) return cust.email;
+    }
+  } catch (e) {
+    console.warn('[mail] could not retrieve customer email from customer id:', e.message || e);
+  }
+
+  return null; // nothing found
+}
+
 // ---------------------------- Boot guards & logging ----------------------------
 process.on('uncaughtException', (err) => {
   console.error('[FATAL] Uncaught exception:', err);
@@ -401,95 +422,97 @@ app.post(
     try {
       switch (event.type) {
         case 'checkout.session.completed': {
-  const session = event.data.object;
+          const session = event.data.object;
 
-  // ---- Reassemble compact config from Stripe metadata ----
-  const md = session.metadata || {};
-  let config = null;
-  try {
-    config = reassembleCfgFromMeta(md);
-  } catch {
-    config = null;
-  }
+          // ---- Reassemble compact config from Stripe metadata ----
+          const md = session.metadata || {};
+          let config = null;
+          try {
+            config = reassembleCfgFromMeta(md);
+          } catch {
+            config = null;
+          }
 
-  // ---- Friendly fields for emails ----
-  const orderId = session.id;
-  const currency = String(session.currency || 'usd').toUpperCase();
-  const orderTotalUSD = ((session.amount_total || 0) / 100).toFixed(2);
+          // ---- Friendly fields for emails ----
+          const orderId = session.id;
+          const currency = String(session.currency || 'usd').toUpperCase();
+          const orderTotalUSD = ((session.amount_total || 0) / 100).toFixed(2);
 
-  // Stripe can put email in several places; try them in order:
-  const customerEmail =
-    (session.customer_details && session.customer_details.email) ||
-    session.customer_email ||
-    md.customer_email ||
-    md.email ||
-    '';
+          // NEW: robust customer email lookup (helper you added above)
+          // Also fall back to metadata if present.
+          const customerEmail =
+            (await getCustomerEmailFromSession(session)) ||
+            md.customer_email ||
+            md.email ||
+            '';
 
-  const brandName = process.env.MAIL_FROM_NAME || 'Rock Creek Granite';
+          // ================== INTERNAL EMAIL (orders@) ==================
+          try {
+            const internalSubject = `${process.env.NODE_ENV === 'production' ? '' : '[TEST] '}Order confirmed — ${orderId}`;
+            const internalHtml = renderInternalEmailHTML(config, session);
+            const internalText =
+              `New order confirmed\n\n` +
+              `Stripe Session: ${orderId}\n` +
+              `Customer: ${customerEmail || 'N/A'}\n` +
+              `Total: $${orderTotalUSD} ${currency}\n`;
 
-  // ================== INTERNAL EMAIL (orders@) ==================
-  try {
-    const internalSubject = `${process.env.NODE_ENV === 'production' ? '' : '[TEST] '}Order confirmed — ${orderId}`;
-    const internalHtml = renderInternalEmailHTML(config, session);
-    const internalText =
-      `New order confirmed\n\n` +
-      `Stripe Session: ${orderId}\n` +
-      `Customer: ${customerEmail || 'N/A'}\n` +
-      `Total: $${orderTotalUSD} ${currency}\n`;
+            // Fallback DXF built from config (so orders always gets a DXF)
+            const dxfAttachment = makeDxfAttachmentFromConfig(config); // safe even if config is null
 
-    // Fallback DXF built from config (so orders always gets a DXF)
-    const dxfAttachment = makeDxfAttachmentFromConfig(config); // safe even if config is null
+            await sendEmail({
+              to: process.env.ORDER_NOTIFY_EMAIL || process.env.BUSINESS_EMAIL || 'orders@rockcreekgranite.com',
+              subject: internalSubject,
+              html: internalHtml,
+              text: internalText,
+              attachments: dxfAttachment ? [dxfAttachment] : [],
+              replyTo: process.env.ORDER_NOTIFY_EMAIL || 'orders@rockcreekgranite.com',
+            });
 
-    await sendEmail({
-      to: process.env.ORDER_NOTIFY_EMAIL || process.env.BUSINESS_EMAIL || 'orders@rockcreekgranite.com',
-      subject: internalSubject,
-      html: internalHtml,
-      text: internalText,
-      attachments: dxfAttachment ? [dxfAttachment] : [],
-      replyTo: process.env.ORDER_NOTIFY_EMAIL || 'orders@rockcreekgranite.com',
-    });
+            console.log('[mail] internal order email sent', dxfAttachment ? 'with DXF' : '(no DXF)');
+          } catch (e) {
+            console.error('[mail] internal order email failed:', e);
+          }
 
-    console.log('[mail] internal order email sent', dxfAttachment ? 'with DXF' : '(no DXF)');
-  } catch (e) {
-    console.error('[mail] internal order email failed:', e);
-  }
+          // ================== CUSTOMER EMAIL (designed) ==================
+          if (customerEmail && /.+@.+\..+/.test(customerEmail)) {
+            try {
+              const customerSubject = `${process.env.NODE_ENV === 'production' ? '' : '[TEST] '}Thanks! We received your order — ${orderId}`;
+              const customerHtml = renderCustomerEmailHTML(config, session);
+              const customerText =
+                `Thanks — we received your order!\n\n` +
+                `Order #: ${orderId}\n` +
+                `Total: $${orderTotalUSD} ${currency}\n`;
 
-  // ================== CUSTOMER EMAIL (designed) ==================
-  if (customerEmail && /.+@.+\..+/.test(customerEmail)) {
-    try {
-      const customerSubject = `${process.env.NODE_ENV === 'production' ? '' : '[TEST] '}Thanks! We received your order — ${orderId}`;
-      const customerHtml = renderCustomerEmailHTML(config, session);
-      const customerText =
-        `Thanks — we received your order!\n\n` +
-        `Order #: ${orderId}\n` +
-        `Total: $${orderTotalUSD} ${currency}\n`;
+              await sendEmail({
+                to: customerEmail,                        // fires to the purchaser
+                subject: customerSubject,
+                html: customerHtml,
+                text: customerText,
+                replyTo: process.env.ORDER_NOTIFY_EMAIL || 'orders@rockcreekgranite.com',
+              });
 
-      await sendEmail({
-        to: customerEmail,                        // IMPORTANT: this fires to the purchaser
-        subject: customerSubject,
-        html: customerHtml,
-        text: customerText,
-        replyTo: process.env.ORDER_NOTIFY_EMAIL || 'orders@rockcreekgranite.com',
-      });
+              console.log('[mail] customer email sent ->', customerEmail);
+            } catch (e) {
+              console.error('[mail] customer email failed:', e);
+            }
+          } else {
+            console.log('[mail] no valid customer email found; skipping customer send', {
+              session_id: orderId,
+              has_customer_details: !!session.customer_details,
+              session_customer: session.customer || null
+            });
+          }
 
-      console.log('[mail] customer email sent ->', customerEmail);
-    } catch (e) {
-      console.error('[mail] customer email failed:', e);
-    }
-  } else {
-    console.log('[mail] no valid customer email on session; skipping customer send');
-  }
+          // ---- Log compact summary
+          console.log('[stripe] checkout.session.completed', {
+            id: orderId,
+            email: customerEmail || '(none)',
+            amount_total: session.amount_total,
+            cfg_summary: config ? { shape: config.shape, zip: config?.zip || md.zip || '' } : null
+          });
 
-  // ---- Log compact summary
-  console.log('[stripe] checkout.session.completed', {
-    id: orderId,
-    email: customerEmail || '(none)',
-    amount_total: session.amount_total,
-    cfg_summary: config ? { shape: config.shape, zip: config?.zip || md.zip || '' } : null
-  });
-
-  break;
-}
+          break;
+        }
 
         default: {
           if (process.env.NODE_ENV !== 'production') {
