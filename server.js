@@ -160,6 +160,13 @@ function reassembleCfgFromMeta(md) {
   catch { return null; }
 }
 
+function shortOrderId(fullId = '') {
+  // Turns: cs_test_b157kropwFaYFzT...  ->  b157kropwF
+  return String(fullId)
+    .replace(/^cs_(test|live)_/i, '')
+    .slice(0, 10);
+}
+
 // ---------------------------- Faucet helpers (emails) -------------------------
 function faucetDesc(s) {
   const n = parseInt(s?.faucet ?? 1, 10) || 1;
@@ -337,12 +344,19 @@ async function sendEmail({ to, bcc, subject, text, html, attachments = [], reply
 
 // ---------------------------- Tiny HTML templates -----------------------------
 function renderCustomerEmailHTML(cfg, session) {
-  // helpers
-  const money = v => `$${((v || 0) / 100).toFixed(2)}`;
-  const total = session.amount_total || 0;
-  const currency = String(session.currency || 'usd').toUpperCase();
+  const brandName = process.env.MAIL_FROM_NAME || 'Rock Creek Granite';
+  const logoUrl =
+    process.env.MAIL_LOGO_URL ||
+    'https://cdn.prod.website-files.com/634cb6e50d8312e63b8d5ee1/67a16defcff775964e6f48ed_RCG_consumerLogo.svg';
+
+  const safe = (v) => String(v ?? '').replace(/[<>&"]/g, (c) => ({ '<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;' }[c]));
+  const money = (cents) => `$${((cents || 0) / 100).toFixed(2)}`;
+
+  const orderId = session?.id || '';
+  const shortId = shortOrderId(orderId);
+  const total = session?.amount_total || 0;
   const zip = (cfg?.zip || '').toString();
-  const shape = cfg?.shape || 'N/A';
+
   const dims =
     cfg?.shape === 'rectangle'
       ? `${cfg?.dims?.L}" × ${cfg?.dims?.W}"`
@@ -351,108 +365,56 @@ function renderCustomerEmailHTML(cfg, session) {
       : cfg?.shape
       ? `${cfg?.dims?.n}-sides, ${cfg?.dims?.A}" side`
       : 'N/A';
+
   const edges = (cfg?.edges || []).join(', ') || 'None';
   const sinks = (cfg?.sinks || []).length;
-  const backsplash = cfg?.backsplash ? 'Yes' : 'No';
-  const color = cfg?.color || 'N/A';
-  const brand = process.env.MAIL_FROM_NAME || 'Rock Creek Granite';
-  const orderId = session.id;
 
-  // preheader is hidden preview text many inboxes show next to subject
-  const preheader = `Thanks—your order ${orderId} was received. Total ${money(total)} ${currency}.`;
-
-  // Your SVG logo (remote) — most clients will load it; alt text included as fallback
-  const logoUrl = 'https://cdn.prod.website-files.com/634cb6e50d8312e63b8d5ee1/67a16defcff775964e6f48ed_RCG_consumerLogo.svg';
+  // RCG yellow banner
+  const bannerBg = '#ffc400';
 
   return `
-  <div style="background:#f6f7f9;margin:0;padding:0;">
-    <!-- Preheader (hidden) -->
-    <div style="display:none;overflow:hidden;line-height:1px;opacity:0;max-height:0;max-width:0;">
-      ${preheader}
+  <div style="font-family:Arial,Helvetica,sans-serif;max-width:680px;margin:0 auto;background:#ffffff;color:#111;">
+    <!-- Banner -->
+    <div style="background:${bannerBg};padding:14px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;">
+      <div style="display:flex;align-items:center;gap:12px;min-width:0;">
+        <img src="${safe(logoUrl)}" alt="${safe(brandName)}" style="height:36px;display:block;" />
+        <div style="font-weight:800;font-size:14px;line-height:1.1;white-space:nowrap;">Order Confirmed</div>
+      </div>
+
+      <!-- short order id only (prevents horizontal scrolling) -->
+      <div style="font-weight:800;font-size:13px;white-space:nowrap;">#${safe(shortId)}</div>
     </div>
 
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f6f7f9;">
-      <tr>
-        <td align="center" style="padding:24px 12px;">
-          <table role="presentation" width="640" cellpadding="0" cellspacing="0" style="width:640px;max-width:100%;background:#ffffff;border-radius:10px;overflow:hidden;border:1px solid #e6e7eb;">
-            <!-- Header -->
-            <tr>
-              <td style="padding:18px 20px;background:#111;color:#fff;">
-                <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-                  <tr>
-                    <td style="vertical-align:middle;">
-                      <img src="${logoUrl}" width="160" alt="${brand}" style="display:block;max-width:160px;">
-                    </td>
-                    <td align="right" style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#ddd;">
-                      Order&nbsp;<strong>${orderId}</strong>
-                    </td>
-                  </tr>
-                </table>
-              </td>
-            </tr>
+    <!-- Body -->
+    <div style="padding:18px 16px;">
+      <h2 style="margin:0 0 10px;font-size:18px;">Thanks — payment received!</h2>
+      <p style="margin:0 0 14px;font-size:14px;line-height:1.5;color:#222;">
+        We’re getting started on your custom countertop. Here’s your order summary:
+      </p>
 
-            <!-- Title -->
-            <tr>
-              <td style="padding:22px 20px 10px 20px;font-family:Arial,Helvetica,sans-serif;">
-                <div style="font-size:18px;font-weight:700;color:#111;margin:0 0 6px;">Thanks — payment received!</div>
-                <div style="font-size:14px;color:#333;margin:0;">We’ve started your fabrication ticket. Here’s a quick summary:</div>
-              </td>
-            </tr>
+      <div style="background:#fafafa;border:1px solid #eee;border-radius:8px;padding:14px;">
+        <div style="font-size:13px;line-height:1.45;">
+          <div><strong>Order #:</strong> ${safe(shortId)}</div>
+          <div style="word-break:break-word;overflow-wrap:anywhere;"><strong>Stripe Ref:</strong> ${safe(orderId)}</div>
+          <div><strong>Total Paid:</strong> ${safe(money(total))} ${safe(String(session?.currency || 'usd').toUpperCase())}</div>
+          <div><strong>Ship ZIP:</strong> ${safe(zip || 'N/A')}</div>
+          <div><strong>Shape:</strong> ${safe(cfg?.shape || 'N/A')}</div>
+          <div><strong>Size:</strong> ${safe(dims)}</div>
+          <div><strong>Polished edges:</strong> ${safe(edges)}</div>
+          <div><strong>Sinks:</strong> ${safe(sinks)}</div>
+          <div><strong>Backsplash:</strong> ${cfg?.backsplash ? 'Yes' : 'No'}</div>
+          <div><strong>Stone:</strong> ${safe(cfg?.color || 'N/A')}</div>
+        </div>
+      </div>
 
-            <!-- Summary table -->
-            <tr>
-              <td style="padding:6px 20px 18px 20px;">
-                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#111;">
-                  <tr>
-                    <td style="padding:8px 0;width:40%;color:#555;">Total Paid</td>
-                    <td style="padding:8px 0;"><strong>${money(total)} ${currency}</strong></td>
-                  </tr>
-                  <tr>
-                    <td style="padding:8px 0;color:#555;">Ship ZIP</td>
-                    <td style="padding:8px 0;">${zip || 'N/A'}</td>
-                  </tr>
-                  <tr>
-                    <td style="padding:8px 0;color:#555;">Shape</td>
-                    <td style="padding:8px 0;">${shape}</td>
-                  </tr>
-                  <tr>
-                    <td style="padding:8px 0;color:#555;">Size</td>
-                    <td style="padding:8px 0;">${dims}</td>
-                  </tr>
-                  <tr>
-                    <td style="padding:8px 0;color:#555;">Polished edges</td>
-                    <td style="padding:8px 0;">${edges}</td>
-                  </tr>
-                  <tr>
-                    <td style="padding:8px 0;color:#555;">Sinks</td>
-                    <td style="padding:8px 0;">${sinks}</td>
-                  </tr>
-                  <tr>
-                    <td style="padding:8px 0;color:#555;">Backsplash</td>
-                    <td style="padding:8px 0;">${backsplash}</td>
-                  </tr>
-                  <tr>
-                    <td style="padding:8px 0;color:#555;">Stone</td>
-                    <td style="padding:8px 0;">${color}</td>
-                  </tr>
-                </table>
-              </td>
-            </tr>
+      <p style="margin:14px 0 0;font-size:13px;color:#444;">
+        We’ll follow up with your production timeline and shipping details shortly.
+      </p>
 
-            <!-- Footer -->
-            <tr>
-              <td style="padding:16px 20px 20px 20px;font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#666;border-top:1px solid #eee;">
-                Questions? Reply to this email or contact <a href="mailto:${process.env.ORDER_NOTIFY_EMAIL || 'orders@rockcreekgranite.com'}" style="color:#444;text-decoration:none;">${process.env.ORDER_NOTIFY_EMAIL || 'orders@rockcreekgranite.com'}</a>.<br>
-                <span style="color:#999;display:inline-block;margin-top:8px;">© ${new Date().getFullYear()} ${brand}</span>
-              </td>
-            </tr>
-          </table>
-
-          <!-- small spacer -->
-          <div style="height:20px;line-height:20px;">&nbsp;</div>
-        </td>
-      </tr>
-    </table>
+      <p style="margin:18px 0 0;font-size:12px;color:#666;">
+        Questions? Reply to this email and we’ll help.
+      </p>
+    </div>
   </div>
   `;
 }
@@ -590,14 +552,14 @@ if (isValidEmail(customerEmail)) {
   try {
     const customerSubject = `${
       process.env.NODE_ENV === 'production' ? '' : '[TEST] '
-    }Thanks! We received your order — ${orderId}`;
+    }You're Rock'n! We got your order — ${shortOrderId(orderId)}`;
 
     // HTML comes from your template function (paste the new template into that function)
     const customerHtml = renderCustomerEmailHTML(config, session);
 
     // Plain-text fallback (helps deliverability + non-HTML clients)
     const customerText =
-      `Thanks — we received your order!\n\n` +
+      `You're Rock'n! We got your order\n\n` +
       `Order #: ${orderId}\n` +
       `Total: $${orderTotalUSD} ${currency}\n` +
       `Ship ZIP: ${config?.zip || md.zip || 'N/A'}\n` +
