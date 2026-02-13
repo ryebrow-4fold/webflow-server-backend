@@ -337,41 +337,122 @@ async function sendEmail({ to, bcc, subject, text, html, attachments = [], reply
 
 // ---------------------------- Tiny HTML templates -----------------------------
 function renderCustomerEmailHTML(cfg, session) {
-  const money = v => `$${(v/100).toFixed(2)}`;
+  // helpers
+  const money = v => `$${((v || 0) / 100).toFixed(2)}`;
   const total = session.amount_total || 0;
+  const currency = String(session.currency || 'usd').toUpperCase();
   const zip = (cfg?.zip || '').toString();
-  const dims = cfg?.shape === 'rectangle'
-    ? `${cfg?.dims?.L}" × ${cfg?.dims?.W}"`
-    : (cfg?.shape === 'circle'
+  const shape = cfg?.shape || 'N/A';
+  const dims =
+    cfg?.shape === 'rectangle'
+      ? `${cfg?.dims?.L}" × ${cfg?.dims?.W}"`
+      : cfg?.shape === 'circle'
       ? `${cfg?.dims?.D}" Ø`
-      : `${cfg?.dims?.n}-sides, ${cfg?.dims?.A}" side`);
+      : cfg?.shape
+      ? `${cfg?.dims?.n}-sides, ${cfg?.dims?.A}" side`
+      : 'N/A';
   const edges = (cfg?.edges || []).join(', ') || 'None';
   const sinks = (cfg?.sinks || []).length;
+  const backsplash = cfg?.backsplash ? 'Yes' : 'No';
+  const color = cfg?.color || 'N/A';
+  const brand = process.env.MAIL_FROM_NAME || 'Rock Creek Granite';
+  const orderId = session.id;
+
+  // preheader is hidden preview text many inboxes show next to subject
+  const preheader = `Thanks—your order ${orderId} was received. Total ${money(total)} ${currency}.`;
+
+  // Your SVG logo (remote) — most clients will load it; alt text included as fallback
+  const logoUrl = 'https://cdn.prod.website-files.com/634cb6e50d8312e63b8d5ee1/67a16defcff775964e6f48ed_RCG_consumerLogo.svg';
 
   return `
-  <div style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto;padding:16px;color:#111">
-    <div style="padding:12px 0 16px;border-bottom:2px solid #eee;display:flex;align-items:center;gap:10px">
-      <div style="width:10px;height:10px;background:#ffc400;border-radius:2px"></div>
-      <div style="font-size:18px;font-weight:700">Rock Creek Granite — Order Confirmation</div>
+  <div style="background:#f6f7f9;margin:0;padding:0;">
+    <!-- Preheader (hidden) -->
+    <div style="display:none;overflow:hidden;line-height:1px;opacity:0;max-height:0;max-width:0;">
+      ${preheader}
     </div>
 
-    <p style="font-size:15px;line-height:1.5;margin:16px 0">Thanks for your order! We’ve received your payment and started your fabrication ticket.</p>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f6f7f9;">
+      <tr>
+        <td align="center" style="padding:24px 12px;">
+          <table role="presentation" width="640" cellpadding="0" cellspacing="0" style="width:640px;max-width:100%;background:#ffffff;border-radius:10px;overflow:hidden;border:1px solid #e6e7eb;">
+            <!-- Header -->
+            <tr>
+              <td style="padding:18px 20px;background:#111;color:#fff;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td style="vertical-align:middle;">
+                      <img src="${logoUrl}" width="160" alt="${brand}" style="display:block;max-width:160px;">
+                    </td>
+                    <td align="right" style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#ddd;">
+                      Order&nbsp;<strong>${orderId}</strong>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
 
-    <div style="background:#fafafa;border:1px solid #eee;padding:12px 14px;margin:12px 0">
-      <div><strong>Stripe Session:</strong> ${session.id}</div>
-      <div><strong>Total Paid:</strong> ${money(total)}</div>
-      <div><strong>Ship ZIP:</strong> ${zip}</div>
-      <div><strong>Shape:</strong> ${cfg?.shape || 'N/A'}</div>
-      <div><strong>Size:</strong> ${dims || 'N/A'}</div>
-      <div><strong>Polished edges:</strong> ${edges}</div>
-      <div><strong>Sinks:</strong> ${sinks}</div>
-      <div><strong>Backsplash:</strong> ${cfg?.backsplash ? 'Yes' : 'No'}</div>
-      <div><strong>Stone:</strong> ${cfg?.color || 'N/A'}</div>
-      <div><strong>Faucets:</strong><br><span style="white-space:pre-line;">${sinksFaucetList(cfg)}</span></div>
-    </div>
+            <!-- Title -->
+            <tr>
+              <td style="padding:22px 20px 10px 20px;font-family:Arial,Helvetica,sans-serif;">
+                <div style="font-size:18px;font-weight:700;color:#111;margin:0 0 6px;">Thanks — payment received!</div>
+                <div style="font-size:14px;color:#333;margin:0;">We’ve started your fabrication ticket. Here’s a quick summary:</div>
+              </td>
+            </tr>
 
-    <p style="font-size:14px;color:#333">We’ll follow up with your production timeline and shipping details shortly.</p>
-    <p style="font-size:13px;color:#666;margin-top:22px">Questions? Reply to this email or call (555) 555-5555.</p>
+            <!-- Summary table -->
+            <tr>
+              <td style="padding:6px 20px 18px 20px;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#111;">
+                  <tr>
+                    <td style="padding:8px 0;width:40%;color:#555;">Total Paid</td>
+                    <td style="padding:8px 0;"><strong>${money(total)} ${currency}</strong></td>
+                  </tr>
+                  <tr>
+                    <td style="padding:8px 0;color:#555;">Ship ZIP</td>
+                    <td style="padding:8px 0;">${zip || 'N/A'}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:8px 0;color:#555;">Shape</td>
+                    <td style="padding:8px 0;">${shape}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:8px 0;color:#555;">Size</td>
+                    <td style="padding:8px 0;">${dims}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:8px 0;color:#555;">Polished edges</td>
+                    <td style="padding:8px 0;">${edges}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:8px 0;color:#555;">Sinks</td>
+                    <td style="padding:8px 0;">${sinks}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:8px 0;color:#555;">Backsplash</td>
+                    <td style="padding:8px 0;">${backsplash}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:8px 0;color:#555;">Stone</td>
+                    <td style="padding:8px 0;">${color}</td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <!-- Footer -->
+            <tr>
+              <td style="padding:16px 20px 20px 20px;font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#666;border-top:1px solid #eee;">
+                Questions? Reply to this email or contact <a href="mailto:${process.env.ORDER_NOTIFY_EMAIL || 'orders@rockcreekgranite.com'}" style="color:#444;text-decoration:none;">${process.env.ORDER_NOTIFY_EMAIL || 'orders@rockcreekgranite.com'}</a>.<br>
+                <span style="color:#999;display:inline-block;margin-top:8px;">© ${new Date().getFullYear()} ${brand}</span>
+              </td>
+            </tr>
+          </table>
+
+          <!-- small spacer -->
+          <div style="height:20px;line-height:20px;">&nbsp;</div>
+        </td>
+      </tr>
+    </table>
   </div>
   `;
 }
@@ -473,36 +554,46 @@ app.post(
             console.error('[mail] internal order email failed:', e);
           }
 
-          // ================== CUSTOMER EMAIL (designed) ==================
-          if (customerEmail && /.+@.+\..+/.test(customerEmail)) {
-            try {
-              const customerSubject = `${process.env.NODE_ENV === 'production' ? '' : '[TEST] '}Thanks! We received your order — ${orderId}`;
-              const customerHtml = renderCustomerEmailHTML(config, session);
-              const customerText =
-                `Thanks — we received your order!\n\n` +
-                `Order #: ${orderId}\n` +
-                `Total: $${orderTotalUSD} ${currency}\n`;
+// ================== CUSTOMER EMAIL (designed) ==================
+const isValidEmail = (s) => /.+@.+\..+/.test(String(s || '').trim());
 
-              await sendEmail({
-                to: customerEmail,                        // fires to the purchaser
-                subject: customerSubject,
-                html: customerHtml,
-                text: customerText,
-                replyTo: process.env.ORDER_NOTIFY_EMAIL || 'orders@rockcreekgranite.com',
-              });
+if (isValidEmail(customerEmail)) {
+  try {
+    const customerSubject = `${
+      process.env.NODE_ENV === 'production' ? '' : '[TEST] '
+    }Thanks! We received your order — ${orderId}`;
 
-              console.log('[mail] customer email sent ->', customerEmail);
-            } catch (e) {
-              console.error('[mail] customer email failed:', e);
-            }
-          } else {
-            console.log('[mail] no valid customer email found; skipping customer send', {
-              session_id: orderId,
-              has_customer_details: !!session.customer_details,
-              session_customer: session.customer || null
-            });
-          }
+    // HTML comes from your template function (paste the new template into that function)
+    const customerHtml = renderCustomerEmailHTML(config, session);
 
+    // Plain-text fallback (helps deliverability + non-HTML clients)
+    const customerText =
+      `Thanks — we received your order!\n\n` +
+      `Order #: ${orderId}\n` +
+      `Total: $${orderTotalUSD} ${currency}\n` +
+      `Ship ZIP: ${config?.zip || md.zip || 'N/A'}\n` +
+      `Shape: ${config?.shape || 'N/A'}\n`;
+
+    await sendEmail({
+      to: customerEmail, // sends to the purchaser
+      subject: customerSubject,
+      html: customerHtml,
+      text: customerText,
+      replyTo: process.env.ORDER_NOTIFY_EMAIL || 'orders@rockcreekgranite.com',
+    });
+
+    console.log('[mail] customer email sent ->', customerEmail);
+  } catch (e) {
+    console.error('[mail] customer email failed:', e);
+  }
+} else {
+  console.log('[mail] no valid customer email found; skipping customer send', {
+    session_id: orderId,
+    customerEmail,
+    has_customer_details: !!session.customer_details,
+    session_customer: session.customer || null,
+  });
+}
           // ---- Log compact summary
           console.log('[stripe] checkout.session.completed', {
             id: orderId,
