@@ -529,30 +529,59 @@ app.post(
 
           // ================== INTERNAL EMAIL (orders@) ==================
           try {
-            const internalSubject = `${process.env.NODE_ENV === 'production' ? '' : '[TEST] '}Order confirmed — ${orderId}`;
-            const internalHtml = renderInternalEmailHTML(config, session);
-            const internalText =
-              `New order confirmed\n\n` +
-              `Stripe Session: ${orderId}\n` +
-              `Customer: ${customerEmail || 'N/A'}\n` +
-              `Total: $${orderTotalUSD} ${currency}\n`;
+  const shortId = orderId.replace('cs_test_', '').replace('cs_live_', '').slice(0, 10);
 
-            // Fallback DXF built from config (so orders always gets a DXF)
-            const dxfAttachment = makeDxfAttachmentFromConfig(config); // safe even if config is null
+  const internalSubject =
+    `${process.env.NODE_ENV === 'production' ? '' : '[TEST] '}New Order — ${shortId}`;
 
-            await sendEmail({
-              to: process.env.ORDER_NOTIFY_EMAIL || process.env.BUSINESS_EMAIL || 'orders@rockcreekgranite.com',
-              subject: internalSubject,
-              html: internalHtml,
-              text: internalText,
-              attachments: dxfAttachment ? [dxfAttachment] : [],
-              replyTo: process.env.ORDER_NOTIFY_EMAIL || 'orders@rockcreekgranite.com',
-            });
+  const internalHtml = `
+  <div style="font-family:Arial,sans-serif;max-width:680px;margin:0 auto;background:#ffffff">
+    <div style="padding:20px 0;text-align:center;border-bottom:2px solid #eee">
+      <img src="https://cdn.prod.website-files.com/634cb6e50d8312e63b8d5ee1/67a16defcff775964e6f48ed_RCG_consumerLogo.svg"
+           alt="Rock Creek Granite"
+           style="height:48px" />
+    </div>
 
-            console.log('[mail] internal order email sent', dxfAttachment ? 'with DXF' : '(no DXF)');
-          } catch (e) {
-            console.error('[mail] internal order email failed:', e);
-          }
+    <div style="padding:20px">
+      <h2 style="margin:0 0 14px;font-size:18px;color:#111">
+        New Countertop Order
+      </h2>
+
+      <div style="background:#fafafa;border:1px solid #eee;padding:14px">
+        <div><strong>Order ID:</strong> ${shortId}</div>
+        <div><strong>Stripe Session:</strong> ${orderId}</div>
+        <div><strong>Customer:</strong> ${customerEmail || 'N/A'}</div>
+        <div><strong>Total:</strong> $${orderTotalUSD} ${currency}</div>
+        <div><strong>ZIP:</strong> ${config?.zip || 'N/A'}</div>
+        <div><strong>Shape:</strong> ${config?.shape || 'N/A'}</div>
+        <div><strong>Stone:</strong> ${config?.color || 'N/A'}</div>
+        <div><strong>Sinks:</strong> ${(config?.sinks || []).length}</div>
+        <div><strong>Edges:</strong> ${(config?.edges || []).join(', ') || 'None'}</div>
+        <div><strong>Backsplash:</strong> ${config?.backsplash ? 'Yes' : 'No'}</div>
+      </div>
+
+      <p style="margin-top:18px;font-size:13px;color:#666">
+        This order was generated via the online configurator.
+      </p>
+    </div>
+  </div>
+  `;
+
+  const dxfAttachment = makeDxfAttachmentFromConfig(config, shortId);
+
+  await sendEmail({
+    to: process.env.ORDER_NOTIFY_EMAIL || 'orders@rockcreekgranite.com',
+    subject: internalSubject,
+    html: internalHtml,
+    text: `New order ${shortId}\nCustomer: ${customerEmail}\nTotal: $${orderTotalUSD} ${currency}`,
+    attachments: dxfAttachment ? [dxfAttachment] : [],
+    replyTo: process.env.ORDER_NOTIFY_EMAIL || 'orders@rockcreekgranite.com',
+  });
+
+  console.log('[mail] internal branded order email sent');
+} catch (e) {
+  console.error('[mail] internal order email failed:', e);
+}
 
 // ================== CUSTOMER EMAIL (designed) ==================
 const isValidEmail = (s) => /.+@.+\..+/.test(String(s || '').trim());
