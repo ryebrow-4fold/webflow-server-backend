@@ -378,11 +378,10 @@ function renderCustomerEmailHTML(cfg, session) {
     <div style="background:${bannerBg};padding:14px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;">
       <div style="display:flex;align-items:center;gap:12px;min-width:0;">
         <img src="${safe(logoUrl)}" alt="${safe(brandName)}" style="height:36px;display:block;" />
-        <div style="font-weight:800;font-size:14px;line-height:1.1;white-space:nowrap;">Order Confirmed</div>
       </div>
 
       <!-- short order id only (prevents horizontal scrolling) -->
-      <div style="font-weight:800;font-size:13px;white-space:nowrap;">#${safe(shortId)}</div>
+      <div style="font-weight:800;font-size:13px;white-space:nowrap;">Order Confirmed</div>
     </div>
 
     <!-- Body -->
@@ -499,7 +498,7 @@ app.post(
   const internalHtml = `
   <div style="font-family:Arial,sans-serif;max-width:680px;margin:0 auto;background:#ffffff">
     <div style="padding:20px 0;text-align:center;border-bottom:2px solid #eee">
-      <img src="https://cdn.prod.website-files.com/634cb6e50d8312e63b8d5ee1/67a16defcff775964e6f48ed_RCG_consumerLogo.svg"
+      <img src="https://cdn.prod.website-files.com/634cb6e50d8312e63b8d5ee1/698eb4a7c5210c924a31f46a_RCG_Logo.png"
            alt="Rock Creek Granite"
            style="height:48px" />
     </div>
