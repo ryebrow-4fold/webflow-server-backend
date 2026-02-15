@@ -135,6 +135,34 @@
         width: min(520px, 100%);
         font-size: 16px;
       }
+        
+      /* Desktop: behave like in-page section (NOT a modal overlay) */
+      @media (min-width: 981px){
+      .rcg-modal{
+      position: static !important;
+      inset: auto !important;
+      background: transparent !important;
+      padding: 0 !important;
+      display: block !important;
+      }
+
+      @media (max-width: 980px){
+      .rcg-preview{
+      /* space for the bottom sheet so the SVG isn't blocked */
+      padding-bottom: var(--rcg-sheet-h, 0px);
+      }
+    }
+      
+      .rcg-modal[aria-hidden="true"]{ display:block !important; }
+      .rcg-window{
+      height: auto !important;
+      min-height: 720px; /* gives the preview a nice working area */
+      border: 1px solid #e5e5e5;
+      }
+      
+      /* optional: hide the close button on desktop */
+      .rcg-close{ display:none; }
+      }
 
       .rcg-modal {
         position: fixed; inset: 0;
@@ -405,22 +433,25 @@
   // -----------------------------
   // Modal open/close
   // -----------------------------
-  const modal = el('#rcg-modal', mount);
-  const openBtn = el('#rcg-open', mount);
-  const closeBtn = el('#rcg-close', mount);
+  const modal = el('#rcg-modal');
+  const closeBtn = el('#rcg-close');
+  
+  function isDesktop(){ return window.matchMedia('(min-width: 981px)').matches; }
+  function openConfigurator(){
+    modal.setAttribute('aria-hidden','false');
+}
+function closeConfigurator(){
+  if (isDesktop()) return; // desktop stays open/in-page
+  modal.setAttribute('aria-hidden','true');
+}
 
-  openBtn.onclick = () => modal.setAttribute('aria-hidden', 'false');
-  closeBtn.onclick = () => modal.setAttribute('aria-hidden', 'true');
+if (closeBtn) closeBtn.onclick = closeConfigurator;
 
-  // close if clicking overlay background
-  modal.addEventListener('mousedown', (e) => {
-    if (e.target === modal) modal.setAttribute('aria-hidden', 'true');
-  });
-
-  // optional auto-open from Webflow: data-auto-open="true"
-  if (String(mount.dataset.autoOpen || '').toLowerCase() === 'true') {
-    modal.setAttribute('aria-hidden', 'false');
-  }
+// ensure correct state on load + resize
+openConfigurator();
+window.addEventListener('resize', () => {
+  if (isDesktop()) openConfigurator();
+});
 
   // -----------------------------
   // State
@@ -524,7 +555,8 @@
     t.textContent = text;
     t.setAttribute('x', x);
     t.setAttribute('y', y);
-    t.setAttribute('font-size', isMobile() ? '22' : '16'); // larger on mobile
+    t.setAttribute('font-size', isMobile()? '30' : '16');
+    t.setAttribute('stroke-width', isMobile()? '5' : '3');    
     t.setAttribute('dominant-baseline', 'middle');
     t.setAttribute('text-anchor', 'middle');
     t.setAttribute('fill', 'var(--rcg-black)');
@@ -1306,6 +1338,32 @@
     const handle = el('#rcg-panel-handle', mount);
     if(!panel || !handle) return;
 
+    function syncMobilePreviewInset(){
+  const panel = document.getElementById('rcg-panel');
+  const preview = document.querySelector('.rcg-preview');
+  if(!panel || !preview) return;
+
+  const isMobile = () => window.matchMedia('(max-width: 980px)').matches;
+
+  const apply = () => {
+    if(!isMobile()){
+      preview.style.removeProperty('--rcg-sheet-h');
+      return;
+    }
+    const h = panel.getBoundingClientRect().height || 0;
+    preview.style.setProperty('--rcg-sheet-h', `${Math.ceil(h)}px`);
+  };
+
+  apply();
+  window.addEventListener('resize', apply);
+
+  // Keep in sync as the panel contents change between steps
+  const ro = new ResizeObserver(apply);
+  ro.observe(panel);
+}
+
+syncMobilePreviewInset();
+
     // only draggable on desktop
     const setHandleMode = () => handle.classList.toggle('desktop-draggable', !isMobile());
     setHandleMode();
@@ -1315,17 +1373,21 @@
     const px = n => `${n}px`;
 
     function onDown(e){
-      if(isMobile()) return;
-      dragging = true;
+  if(isMobile()) return;
+  dragging = true;
 
-      const rect = panel.getBoundingClientRect();
-      startLeft = rect.left;
-      startTop = rect.top;
-      startX = e.clientX;
-      startY = e.clientY;
+  const rect = panel.getBoundingClientRect();
+  startLeft = rect.left;
+  startTop = rect.top;
+  startX = e.clientX;
+  startY = e.clientY;
 
-      e.preventDefault();
-    }
+  handle.style.cursor = 'grabbing';
+  document.body.style.userSelect = 'none';
+
+  e.preventDefault();
+}
+
     function onMove(e){
       if(!dragging) return;
       const dx = e.clientX - startX;
@@ -1338,7 +1400,12 @@
       panel.style.top  = px(newTop);
       panel.style.right = 'auto';
     }
-    function onUp(){ dragging = false; }
+    
+    function onUp(){
+  dragging = false;
+  handle.style.cursor = 'grab';
+  document.body.style.userSelect = '';
+}
 
     handle.addEventListener('mousedown', onDown);
     window.addEventListener('mousemove', onMove);
