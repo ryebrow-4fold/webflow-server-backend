@@ -1,13 +1,18 @@
 // server.js — Express + Stripe Checkout + Webhook + Resend email + DXF (ESM)
 // Requires package.json: { "type": "module" }
 
-import 'dotenv/config';
-import express from 'express';
-import cors from 'cors';
-import Stripe from 'stripe';
+import "dotenv/config";
+import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
+import cors from "cors";
+import Stripe from "stripe";
 
+// Create app AFTER imports
+const app = express();
+app.set("trust proxy", true);
+
+// ESM __dirname shim
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -67,9 +72,6 @@ const MAIL_FROM = process.env.SMTP_FROM || process.env.BUSINESS_EMAIL || 'orders
 const MAIL_FROM_NAME = process.env.MAIL_FROM_NAME || 'Rock Creek Granite';
 const MAIL_MODE = RESEND_API_KEY ? 'resend-api' : 'none';
 const ORDER_NOTIFY_EMAIL = process.env.ORDER_NOTIFY_EMAIL || 'orders@rockcreekgranite.com';
-
-const app = express();
-app.set('trust proxy', true);
 
 console.log('[MAIL] Mode:', MAIL_MODE, ' From:', MAIL_FROM, ' As:', MAIL_FROM_NAME);
 console.log('[BOOT] FRONTEND_URL:', FRONTEND_URL);
