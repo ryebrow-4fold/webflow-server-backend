@@ -5,11 +5,14 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import Stripe from 'stripe';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import path from "path";
+import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Serve /public as static files
+app.use(express.static(path.join(__dirname, "public")));
 
 // Find the best available customer email from a Checkout Session
 async function getCustomerEmailFromSession(session) {
