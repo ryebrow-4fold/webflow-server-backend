@@ -1,9 +1,9 @@
 /* =============================
-   RCG CONFIGURATOR (External JS)
+   RCG CONFIGURATOR (External JS) — SINGLE FILE
    - Mounts into: <div id="rcg-configurator-launch"></div>
-   - Launch button text: "Start Your Project Order"
-   - Fullscreen modal with desktop draggable panel + mobile bottom sheet
-   - Uses your existing endpoints:
+   - Desktop: inline (no modal)
+   - Mobile: scroll-revealed launch button -> fullscreen modal
+   - Endpoints:
        - Checkout redirect: /config-checkout?cfg=...
        - Email DXF: POST /api/email-dxf
 ============================= */
@@ -23,6 +23,10 @@
     console.warn('[RCG] Missing #rcg-configurator-launch mount element.');
     return;
   }
+
+  // Optional: allow logo via mount data attr
+  // <div id="rcg-configurator-launch" data-logo="https://.../logo.png"></div>
+  const LOGO_URL = mount.dataset.logo || '';
 
   // -----------------------------
   // Admin knobs
@@ -80,6 +84,7 @@
   const uid = () => Math.random().toString(36).slice(2, 9);
   const fmt2 = (v) => (isFinite(v) ? Number(v).toFixed(2) : '0.00');
   const isMobile = () => window.matchMedia('(max-width: 980px)').matches;
+  const isDesktop = () => window.matchMedia('(min-width: 981px)').matches;
 
   function areaSqft(shape, d) {
     switch (shape) {
@@ -116,63 +121,60 @@
   }
 
   // -----------------------------
-  // Render shell (launcher + modal)
+  // Render shell:
+  // - Desktop inline container
+  // - Mobile launch + modal container
+  // - Single app DOM moved between inline & modal
   // -----------------------------
   mount.innerHTML = `
     <style>
-      :root { --rcg-black:#0b0b0b; --rcg-yellow:#ffc400; --rcg-gray:#f3f3f0; --rcg-muted:#6b7280; --rcg-danger:#c1121f; }
-      .rcg-root, .rcg-root * { font-family: 'Barlow', system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
-      .rcg-root * { border-radius: 0 !important; box-sizing: border-box; }
+      :root {
+        --rcg-black:#0b0b0b;
+        --rcg-yellow:#ffc400;
+        --rcg-gray:#f3f3f0;
+        --rcg-muted:#6b7280;
+        --rcg-danger:#c1121f;
+      }
+      .rcg-root, .rcg-root * {
+        font-family: 'Barlow', system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+        box-sizing: border-box;
+        border-radius: 0 !important;
+      }
 
-      .rcg-launch-wrap{ width:100%; display:flex; justify-content:center; }
+      /* -------- Desktop inline container (always visible on desktop) -------- */
+      .rcg-inline-host{
+        width:100%;
+        position:relative;
+      }
+
+      /* -------- Mobile launch button (hidden until scrolled to section) -------- */
+      .rcg-launch-wrap{
+        width:100%;
+        display:none;
+        justify-content:center;
+        margin: 10px 0 0;
+      }
       .rcg-launch{
         background: var(--rcg-yellow);
         color:#000;
-        font-weight:700;
+        font-weight:800;
         padding:14px 18px;
         border:none;
         cursor:pointer;
         width: min(520px, 100%);
         font-size: 16px;
       }
-        
-      /* Desktop: behave like in-page section (NOT a modal overlay) */
-      @media (min-width: 981px){
-      .rcg-modal{
-      position: static !important;
-      inset: auto !important;
-      background: transparent !important;
-      padding: 0 !important;
-      display: block !important;
-      }
+      .rcg-launch-wrap.rcg-visible{ display:flex; }
 
-      @media (max-width: 980px){
-      .rcg-preview{
-      /* space for the bottom sheet so the SVG isn't blocked */
-      padding-bottom: var(--rcg-sheet-h, 0px);
-      }
-    }
-      
-      .rcg-modal[aria-hidden="true"]{ display:block !important; }
-      .rcg-window{
-      height: auto !important;
-      min-height: 720px; /* gives the preview a nice working area */
-      border: 1px solid #e5e5e5;
-      }
-      
-      /* optional: hide the close button on desktop */
-      .rcg-close{ display:none; }
-      }
-
+      /* -------- Mobile modal overlay -------- */
       .rcg-modal {
         position: fixed; inset: 0;
         z-index: 999999;
         background: rgba(0,0,0,.65);
         display: none;
-        padding: 12px;
+        padding: 0;
       }
       .rcg-modal[aria-hidden="false"]{ display:flex; }
-
       .rcg-window {
         background: #fff;
         width: 100%;
@@ -182,57 +184,74 @@
         overflow: hidden;
       }
 
+      /* Mobile top bar (white) */
       .rcg-topbar{
         display:flex;
         align-items:center;
         justify-content:space-between;
         padding:10px 12px;
-        background: var(--rcg-black);
-        color: #fff;
+        background: #fff;
+        color: #111;
+        border-bottom: 1px solid #e6e6e6;
         gap:10px;
       }
       .rcg-topbar .left{ display:flex; align-items:center; gap:10px; min-width: 0; }
       .rcg-topbar .title{
-        font-weight:700;
+        font-weight:800;
         white-space:nowrap;
         overflow:hidden;
         text-overflow:ellipsis;
-        max-width: 60vw;
+        max-width: 55vw;
+        font-size: 14px;
       }
       .rcg-topbar .meta{
         font-size:12px;
-        color: rgba(255,255,255,.85);
+        color: #555;
         white-space:nowrap;
       }
+      .rcg-logo{
+        width: 28px; height: 28px;
+        object-fit: contain;
+        display:none;
+      }
+      .rcg-logo.rcg-has{ display:block; }
       .rcg-close{
         appearance:none;
-        border:1px solid rgba(255,255,255,.35);
+        border:1px solid rgba(0,0,0,.2);
         background: transparent;
-        color:#fff;
+        color:#111;
         padding:6px 10px;
         cursor:pointer;
-        font-weight:600;
+        font-weight:700;
       }
 
-      .rcg-body{
-        flex:1;
-        display:flex;
-        flex-direction:column;
-        min-height:0;
+      /* App layout (shared for desktop + mobile) */
+      .rcg-app{
+        width:100%;
         position: relative;
       }
-
+      .rcg-body{
+        width:100%;
+        display:flex;
+        flex-direction:column;
+        min-height: 720px;
+        position: relative;
+        background:#fff;
+        border: 1px solid #e5e5e5;
+      }
       .rcg-preview{
         flex: 1;
         min-height: 0;
         background:#fff;
         position: relative;
         overflow: hidden;
+        padding-bottom: var(--rcg-sheet-h, 0px); /* mobile: reserve for bottom sheet */
       }
       .rcg-stage{
         width:100%;
         height:100%;
         display:block;
+        touch-action: none;
       }
 
       .rcg-panel{
@@ -241,13 +260,13 @@
         line-height: 1.2;
       }
 
-      /* Panel header (buttons live here) */
+      /* Panel header (drag handle on desktop) */
       .rcg-panel-handle{
         display:flex;
         align-items:center;
         justify-content:space-between;
         gap:10px;
-        padding:8px 10px;
+        padding:10px 10px;
         background:#fff;
         border:1px solid #cfcfcf;
         margin-bottom:10px;
@@ -255,9 +274,9 @@
       }
       .rcg-panel-handle.desktop-draggable{ cursor: grab; }
       .rcg-panel-handle.desktop-draggable:active{ cursor: grabbing; }
-      .rcg-panel-handle .step{ font-weight:700; min-width:0; }
+      .rcg-panel-handle .step{ font-weight:800; min-width:0; }
       .rcg-panel-handle .step small{
-        font-weight:600;
+        font-weight:700;
         color: var(--rcg-muted);
         margin-left:6px;
         white-space:nowrap;
@@ -268,40 +287,57 @@
         vertical-align:bottom;
       }
 
-      .rcg-btn { background: var(--rcg-yellow); color:#000; font-weight:600; padding:10px 16px; border: none; cursor:pointer; }
+      .rcg-btn { background: var(--rcg-yellow); color:#000; font-weight:800; padding:10px 16px; border: none; cursor:pointer; }
       .rcg-btn[disabled]{ opacity: .5; cursor: not-allowed; }
       .rcg-btn.outline { background:#fff; color:#000; border:1px solid #000; }
 
-      .rcg-title { font-size: 22px; font-weight:600; margin:0 0 8px; color:var(--rcg-black); display:flex; align-items:center; gap:8px }
-      .rcg-sub { color: var(--rcg-muted); font-size: 13px; margin: 6px 0; line-height:1.15; font-weight:400 }
+      .rcg-title { font-size: 22px; font-weight:800; margin:0 0 8px; color:var(--rcg-black); display:flex; align-items:center; gap:8px }
+      .rcg-sub { color: var(--rcg-muted); font-size: 13px; margin: 6px 0; line-height:1.2; font-weight:500 }
       .rcg-row { display:flex; gap:10px; align-items:center; flex-wrap:wrap }
-      .rcg-input { width:110px; padding:8px 10px; border:1px solid #cfcfcf; background:#fff; color:var(--rcg-black); font-weight:400 }
+      .rcg-input { width:110px; padding:8px 10px; border:1px solid #cfcfcf; background:#fff; color:var(--rcg-black); font-weight:600 }
       .rcg-input.invalid { color: var(--rcg-danger); border-color: var(--rcg-danger); }
-      .rcg-label { font-weight:600; color: var(--rcg-black); }
+      .rcg-label { font-weight:800; color: var(--rcg-black); }
       .rcg-hidden { display:none !important; }
 
       .shape-icons { display:flex; gap:12px; flex-wrap:nowrap }
       .shape-iso { width:160px; height:80px; background:transparent; border:none; padding:0; cursor:pointer; display:grid; place-items:center }
       .shape-iso svg { width:100%; height:100%; stroke:#000; stroke-width:1; fill:none }
       .shape-iso.active svg { stroke: var(--rcg-yellow); }
-      @media (max-width: 640px){ .shape-iso { width: calc(33.333% - 8px); height: calc((33.333% - 8px)/2); } }
+      @media (max-width: 640px){
+        .shape-iso { width: calc(33.333% - 8px); height: calc((33.333% - 8px)/2); }
+      }
 
       .sink-controls { display:flex; gap:10px; align-items:center; width:100%; }
       #rcg-sink-select { flex:1; min-width:220px; }
       .sink-chip { display:flex; align-items:center; gap:8px; padding:8px 12px; background:#fff; font-size:13px; border:1px solid #cfcfcf; flex-wrap:nowrap; overflow:hidden }
-      .sink-chip button { border:1px solid #000; background:#fff; cursor:pointer; width:28px; height:28px; line-height:26px; font-weight:700 }
+      .sink-chip button { border:1px solid #000; background:#fff; cursor:pointer; width:28px; height:28px; line-height:26px; font-weight:900 }
       .sink-chip .rcg-input { width:96px }
       .sink-chip select[data-spread]{ width:64px }
 
+      /* Desktop floating panel */
+      @media (min-width: 981px){
+        .rcg-modal { display:none !important; }
+        .rcg-launch-wrap{ display:none !important; }
+
+        .rcg-body{
+          min-height: 740px;
+        }
+        .rcg-panel{
+          position:absolute;
+          right:16px; top:16px;
+          width:520px; max-width: min(520px, 92vw);
+          box-shadow: 0 8px 20px rgba(0,0,0,.12);
+          z-index: 50;
+        }
+      }
+
       /* Mobile bottom sheet */
       @media (max-width: 980px){
-        .rcg-modal{ padding:0; }
-        .rcg-window{ height: 100%; }
-
+        .rcg-inline-host{ display:none; }
         .rcg-panel{
           position: absolute;
           left: 0; right: 0; bottom: 0;
-          max-height: 40vh;
+          max-height: 38vh;          /* less intrusive */
           overflow: auto;
           border-top: 2px solid #ddd;
           padding-bottom: 18px;
@@ -313,145 +349,211 @@
         }
         .rcg-title{ font-size: 20px; }
       }
-
-      /* Desktop floating panel */
-      @media (min-width: 981px){
-        .rcg-panel{
-          position:absolute;
-          right:16px; top:16px;
-          width:520px; max-width: min(520px, 92vw);
-          box-shadow: 0 8px 20px rgba(0,0,0,.12);
-          z-index: 50;
-        }
-      }
     </style>
 
     <div class="rcg-root">
-      <div class="rcg-launch-wrap">
+      <!-- Mobile: launch button -->
+      <div class="rcg-launch-wrap" id="rcg-launch-wrap">
         <button class="rcg-launch" id="rcg-open">Start Your Project Order</button>
       </div>
 
+      <!-- Desktop: inline host -->
+      <div class="rcg-inline-host" id="rcg-inline-host"></div>
+
+      <!-- Mobile: modal -->
       <div class="rcg-modal" id="rcg-modal" aria-hidden="true">
         <div class="rcg-window">
           <div class="rcg-topbar">
             <div class="left">
-              <div class="title">Rock Creek Granite Configurator</div>
+              <img class="rcg-logo ${LOGO_URL ? 'rcg-has':''}" ${LOGO_URL ? `src="${LOGO_URL}"` : ''} alt="">
+              <div class="title">Rock Creek Granite</div>
               <div class="meta" id="rcg-stepper-top">Step 1/4</div>
             </div>
             <button class="rcg-close" id="rcg-close">Close</button>
           </div>
-
-          <div class="rcg-body">
-            <div class="rcg-preview">
-              <svg id="rcg-svg" class="rcg-stage" viewBox="0 0 1400 600" preserveAspectRatio="xMidYMid meet"></svg>
-            </div>
-
-            <aside class="rcg-panel" id="rcg-panel">
-              <div class="rcg-panel-handle" id="rcg-panel-handle" title="Drag to move (desktop)">
-                <div class="step">
-                  <span id="rcg-stepper">Step 1/4</span>
-                  <small id="rcg-step-title">${SECTION_TITLES[1]}</small>
-                </div>
-                <div style="display:flex; gap:8px">
-                  <button class="rcg-btn outline" id="rcg-back">Back</button>
-                  <button class="rcg-btn" id="rcg-next">Next</button>
-                </div>
-              </div>
-
-              <div id="rcg-step1" class="rcg-step">
-                <div class="rcg-title">${SECTION_TITLES[1]}</div>
-                <div class="shape-icons" id="shape-icons"></div>
-                <div style="margin-top:10px" class="rcg-row" id="rcg-dims"></div>
-                <div class="rcg-sub">Max size: 72" × 62" (rect) or 62" diameter (round/polygon).</div>
-              </div>
-
-              <div id="rcg-step2" class="rcg-step rcg-hidden">
-                <div class="rcg-title">${SECTION_TITLES[2]}</div>
-                <div class="rcg-sub" style="font-weight:600;color:#000">Select edges to be flat polished</div>
-                <div class="rcg-sub">Tap each edge in the preview. Yellow = polished. Unpolished sides can receive optional 4" backsplash.</div>
-
-                <div class="rcg-row" id="rcg-polish-choice" style="margin:8px 0 4px 0">
-                  <label style="display:flex;align-items:center;gap:6px"><input type="radio" name="rcg-polish" value="select" checked> I will select polished edges</label>
-                  <label style="display:flex;align-items:center;gap:6px"><input type="radio" name="rcg-polish" value="none"> No polished edges please</label>
-                </div>
-
-                <div class="rcg-row" style="margin-top:4px">
-                  <label class="rcg-label" for="rcg-backsplash">Add 4" Backsplash</label>
-                  <input id="rcg-backsplash" type="checkbox" style="width:18px;height:18px">
-                </div>
-                <div class="rcg-sub">If selected, 4" backsplash will be included for all non-polished sides.</div>
-              </div>
-
-              <div id="rcg-step3" class="rcg-step rcg-hidden">
-                <div class="rcg-title">${SECTION_TITLES[3]}</div>
-
-                <div id="rcg-sinks-block" class="rcg-hidden" style="margin-top:8px">
-                  <div class="sink-controls" style="margin-bottom:6px">
-                    <button class="rcg-btn outline" id="rcg-add-sink" title="Add sink">+</button>
-                    <select class="rcg-input" id="rcg-sink-select">
-                      ${Object.entries(SINK_TEMPLATES).map(([k,t])=>`<option value="${k}">${t.label}</option>`).join('')}
-                    </select>
-                  </div>
-
-                  <div id="rcg-sink-pills" style="display:grid; gap:8px"></div>
-                  <div class="rcg-sub">Sinks must be ≥ ${MIN_SINK_EDGE}" from edges and ≥ ${MIN_SINK_GAP}" from each other. Drag sinks in the preview.</div>
-                </div>
-
-                <div id="rcg-nonrect-note" class="rcg-sub">Sink placement is available for rectangles only.</div>
-              </div>
-
-              <div id="rcg-step4" class="rcg-step rcg-hidden">
-                <div class="rcg-title">${SECTION_TITLES[4]}</div>
-
-                <div class="rcg-row" style="margin-bottom:10px; width:100%">
-                  <label class="rcg-label">Stone</label>
-                  <select class="rcg-input" id="rcg-color" style="flex:1; min-width:220px">
-                    ${COLORS.map(c => `<option value="${c.key}">${c.name}</option>`).join('')}
-                  </select>
-                </div>
-
-                <div class="rcg-row" style="margin-top:8px">
-                  <label class="rcg-label">ZIP</label>
-                  <input class="rcg-input" id="rcg-zip" placeholder="ZIP code" maxlength="5" inputmode="numeric" pattern="\\d{5}">
-                  <button class="rcg-btn" id="rcg-checkout">Checkout</button>
-                </div>
-
-                <div class="rcg-row" style="margin-top:6px">
-                  <input class="rcg-input" id="rcg-email" style="flex:1; min-width:220px" placeholder="Email (optional) — Send me the DXF" type="email">
-                  <button class="rcg-btn outline" id="rcg-email-dxf" title="Email DXF cut sheet">Email DXF</button>
-                </div>
-
-                <div class="rcg-sub">Checkout continues to Stripe. DXF email uses your existing /api/email-dxf endpoint.</div>
-              </div>
-            </aside>
-          </div>
+          <div class="rcg-modal-body" id="rcg-modal-body"></div>
         </div>
       </div>
     </div>
   `;
 
   // -----------------------------
-  // Modal open/close
+  // Build ONE app DOM (moved between inline & modal)
   // -----------------------------
-  const modal = el('#rcg-modal');
-  const closeBtn = el('#rcg-close');
-  
-  function isDesktop(){ return window.matchMedia('(min-width: 981px)').matches; }
-  function openConfigurator(){
-    modal.setAttribute('aria-hidden','false');
-}
-function closeConfigurator(){
-  if (isDesktop()) return; // desktop stays open/in-page
-  modal.setAttribute('aria-hidden','true');
-}
+  function appHTML() {
+    return `
+      <div class="rcg-app" id="rcg-app">
+        <div class="rcg-body">
+          <div class="rcg-preview">
+            <svg id="rcg-svg" class="rcg-stage" viewBox="0 0 1400 600" preserveAspectRatio="xMidYMid meet"></svg>
+          </div>
 
-if (closeBtn) closeBtn.onclick = closeConfigurator;
+          <aside class="rcg-panel" id="rcg-panel">
+            <div class="rcg-panel-handle" id="rcg-panel-handle" title="Drag to move (desktop)">
+              <div class="step">
+                <span id="rcg-stepper">Step 1/4</span>
+                <small id="rcg-step-title">${SECTION_TITLES[1]}</small>
+              </div>
+              <div style="display:flex; gap:8px">
+                <button class="rcg-btn outline" id="rcg-back">Back</button>
+                <button class="rcg-btn" id="rcg-next">Next</button>
+              </div>
+            </div>
 
-// ensure correct state on load + resize
-openConfigurator();
-window.addEventListener('resize', () => {
-  if (isDesktop()) openConfigurator();
-});
+            <div id="rcg-step1" class="rcg-step">
+              <div class="rcg-title">${SECTION_TITLES[1]}</div>
+              <div class="shape-icons" id="shape-icons"></div>
+              <div style="margin-top:10px" class="rcg-row" id="rcg-dims"></div>
+              <div class="rcg-sub">Max size: 72" × 62" (rect) or 62" diameter (round/polygon).</div>
+            </div>
+
+            <div id="rcg-step2" class="rcg-step rcg-hidden">
+              <div class="rcg-title">${SECTION_TITLES[2]}</div>
+              <div class="rcg-sub" style="font-weight:800;color:#000">Select edges to be flat polished</div>
+              <div class="rcg-sub">Tap each edge in the preview. Yellow = polished. Unpolished sides can receive optional 4" backsplash.</div>
+
+              <div class="rcg-row" id="rcg-polish-choice" style="margin:8px 0 4px 0">
+                <label style="display:flex;align-items:center;gap:6px"><input type="radio" name="rcg-polish" value="select" checked> I will select polished edges</label>
+                <label style="display:flex;align-items:center;gap:6px"><input type="radio" name="rcg-polish" value="none"> No polished edges please</label>
+              </div>
+
+              <div class="rcg-row" style="margin-top:4px">
+                <label class="rcg-label" for="rcg-backsplash">Add 4" Backsplash</label>
+                <input id="rcg-backsplash" type="checkbox" style="width:18px;height:18px">
+              </div>
+              <div class="rcg-sub">If selected, 4" backsplash will be included for all non-polished sides.</div>
+            </div>
+
+            <div id="rcg-step3" class="rcg-step rcg-hidden">
+              <div class="rcg-title">${SECTION_TITLES[3]}</div>
+
+              <div id="rcg-sinks-block" class="rcg-hidden" style="margin-top:8px">
+                <div class="sink-controls" style="margin-bottom:6px">
+                  <button class="rcg-btn outline" id="rcg-add-sink" title="Add sink">+</button>
+                  <select class="rcg-input" id="rcg-sink-select">
+                    ${Object.entries(SINK_TEMPLATES).map(([k,t])=>`<option value="${k}">${t.label}</option>`).join('')}
+                  </select>
+                </div>
+
+                <div id="rcg-sink-pills" style="display:grid; gap:8px"></div>
+                <div class="rcg-sub">Sinks must be ≥ ${MIN_SINK_EDGE}" from edges and ≥ ${MIN_SINK_GAP}" from each other. Drag sinks in the preview.</div>
+              </div>
+
+              <div id="rcg-nonrect-note" class="rcg-sub">Sink placement is available for rectangles only.</div>
+            </div>
+
+            <div id="rcg-step4" class="rcg-step rcg-hidden">
+              <div class="rcg-title">${SECTION_TITLES[4]}</div>
+
+              <div class="rcg-row" style="margin-bottom:10px; width:100%">
+                <label class="rcg-label">Stone</label>
+                <select class="rcg-input" id="rcg-color" style="flex:1; min-width:220px">
+                  ${COLORS.map(c => `<option value="${c.key}">${c.name}</option>`).join('')}
+                </select>
+              </div>
+
+              <div class="rcg-row" style="margin-top:8px">
+                <label class="rcg-label">ZIP</label>
+                <input class="rcg-input" id="rcg-zip" placeholder="ZIP code" maxlength="5" inputmode="numeric" pattern="\\d{5}">
+                <button class="rcg-btn" id="rcg-checkout">Checkout</button>
+              </div>
+
+              <div class="rcg-row" style="margin-top:6px">
+                <input class="rcg-input" id="rcg-email" style="flex:1; min-width:220px" placeholder="Email (optional) — Send me the DXF" type="email">
+                <button class="rcg-btn outline" id="rcg-email-dxf" title="Email DXF cut sheet">Email DXF</button>
+              </div>
+
+              <div class="rcg-sub">Checkout continues to Stripe. DXF email uses your existing /api/email-dxf endpoint.</div>
+            </div>
+          </aside>
+        </div>
+      </div>
+    `;
+  }
+
+  const inlineHost = el('#rcg-inline-host', mount);
+  const modal = el('#rcg-modal', mount);
+  const modalBody = el('#rcg-modal-body', mount);
+  const openBtn = el('#rcg-open', mount);
+  const closeBtn = el('#rcg-close', mount);
+  const launchWrap = el('#rcg-launch-wrap', mount);
+
+  const appWrap = document.createElement('div');
+  appWrap.innerHTML = appHTML();
+  const appRoot = appWrap.firstElementChild;
+
+  function attachAppToDesktop() {
+    if (!inlineHost.contains(appRoot)) inlineHost.appendChild(appRoot);
+  }
+  function attachAppToModal() {
+    if (!modalBody.contains(appRoot)) modalBody.appendChild(appRoot);
+  }
+
+  function openModal() {
+    attachAppToModal();
+    modal.setAttribute('aria-hidden', 'false');
+    document.documentElement.style.overflow = 'hidden';
+    document.body.style.overflow = 'hidden';
+    // mobile padding sync
+    syncMobilePreviewInset();
+  }
+  function closeModal() {
+    modal.setAttribute('aria-hidden', 'true');
+    document.documentElement.style.overflow = '';
+    document.body.style.overflow = '';
+  }
+
+  // Desktop default: inline
+  attachAppToDesktop();
+
+  // On resize: move app between containers
+  function syncMode() {
+    if (isDesktop()) {
+      closeModal();
+      attachAppToDesktop();
+      // Desktop drag handle should be active
+      setHandleMode();
+      // clear mobile padding
+      const preview = el('.rcg-preview', appRoot);
+      if (preview) preview.style.removeProperty('--rcg-sheet-h');
+    } else {
+      // mobile: keep inline hidden via CSS; app stays inline until opened
+      setHandleMode();
+    }
+  }
+  window.addEventListener('resize', syncMode);
+
+  // Mobile scroll reveal of button
+  (function setupScrollReveal() {
+    const applyVisibility = (show) => {
+      if (!launchWrap) return;
+      if (isDesktop()) {
+        launchWrap.classList.remove('rcg-visible');
+        return;
+      }
+      launchWrap.classList.toggle('rcg-visible', !!show);
+    };
+
+    // default hidden on mobile until in view
+    applyVisibility(false);
+
+    const obs = new IntersectionObserver((entries) => {
+      const e = entries[0];
+      applyVisibility(e && e.isIntersecting);
+    }, { root: null, threshold: 0.15 });
+
+    obs.observe(mount);
+
+    window.addEventListener('resize', () => applyVisibility(false));
+  })();
+
+  // Buttons
+  if (openBtn) openBtn.addEventListener('click', () => {
+    if (!isMobile()) return;
+    openModal();
+  });
+  if (closeBtn) closeBtn.addEventListener('click', closeModal);
+  modal.addEventListener('mousedown', (e) => { if (e.target === modal) closeModal(); });
 
   // -----------------------------
   // State
@@ -486,12 +588,11 @@ window.addEventListener('resize', () => {
     container.innerHTML = ICONS.map(s => `<button class="shape-iso" data-icon="${s}" aria-label="${s}">${isoIcon(s)}</button>`).join('');
     els('[data-icon]', container).forEach(btn => btn.onclick = () => setShapeFromIcon(btn.dataset.icon));
   }
-  renderShapeIcons(el('#shape-icons', mount));
 
   // -----------------------------
   // SVG Scene
   // -----------------------------
-  const svg = el('#rcg-svg', mount);
+  const svg = el('#rcg-svg', appRoot);
   const ns = 'http://www.w3.org/2000/svg';
 
   const defs = document.createElementNS(ns, 'defs');
@@ -544,7 +645,6 @@ window.addEventListener('resize', () => {
     const remX = 1400 - wpx;
     const remY = 600 - hpx;
 
-    // Center both desktop and mobile (fixes “shifted right/cropped”)
     const cx = remX * 0.5;
     const cy = remY * 0.5;
     return { s, cx, cy, widthIn, heightIn };
@@ -555,13 +655,17 @@ window.addEventListener('resize', () => {
     t.textContent = text;
     t.setAttribute('x', x);
     t.setAttribute('y', y);
-    t.setAttribute('font-size', isMobile()? '30' : '16');
-    t.setAttribute('stroke-width', isMobile()? '5' : '3');    
+
+    const mobile = isMobile();
+    const fontSize = mobile ? 30 : 16;
+    const strokeW  = mobile ? 5 : 3;
+
+    t.setAttribute('font-size', String(fontSize));
     t.setAttribute('dominant-baseline', 'middle');
     t.setAttribute('text-anchor', 'middle');
-    t.setAttribute('fill', 'var(--rcg-black)');
+    t.setAttribute('fill', '#111');
     t.setAttribute('stroke', '#fff');
-    t.setAttribute('stroke-width', '3');
+    t.setAttribute('stroke-width', String(strokeW));
     t.setAttribute('paint-order', 'stroke');
     dimsG.appendChild(t);
   }
@@ -633,7 +737,7 @@ window.addEventListener('resize', () => {
     // edges + hot zones (rectangle only)
     if (state.shape === 'rectangle') {
       const ex = bbox.x, ey = bbox.y, ew = bbox.width, eh = bbox.height;
-      const band = Math.max(14, Math.min(30, Math.min(ew, eh) * 0.12));
+      const band = Math.max(18, Math.min(36, Math.min(ew, eh) * 0.14)); // slightly easier to tap
 
       function drawEdge(x1, y1, x2, y2, key) {
         const active = state.edges.includes(key);
@@ -641,7 +745,7 @@ window.addEventListener('resize', () => {
         seg.setAttribute('x1', x1); seg.setAttribute('y1', y1);
         seg.setAttribute('x2', x2); seg.setAttribute('y2', y2);
         seg.setAttribute('stroke', active ? 'var(--rcg-yellow)' : '#111');
-        seg.setAttribute('stroke-width', active ? '6' : '2');
+        seg.setAttribute('stroke-width', active ? (isMobile()? '8':'6') : '2');
         edgesG.appendChild(seg);
       }
 
@@ -661,7 +765,7 @@ window.addEventListener('resize', () => {
           const r = document.createElementNS(ns, 'rect');
           r.setAttribute('x', z.x); r.setAttribute('y', z.y);
           r.setAttribute('width', z.w); r.setAttribute('height', z.h);
-          r.setAttribute('fill', 'none');
+          r.setAttribute('fill', 'transparent');
           r.setAttribute('pointer-events', 'all');
           r.style.cursor = 'pointer';
           r.addEventListener('click', () => {
@@ -677,12 +781,12 @@ window.addEventListener('resize', () => {
 
     // dimension labels
     if (state.shape === 'rectangle') {
-      label(`${fmt2(state.dims.L || 0)}" (L)`, bbox.x + bbox.width / 2, Math.max(24, bbox.y - 18));
-      label(`${fmt2(state.dims.W || 0)}" (W)`, Math.max(30, bbox.x - 36), bbox.y + bbox.height / 2);
+      label(`${fmt2(state.dims.L || 0)}" (L)`, bbox.x + bbox.width / 2, Math.max(28, bbox.y - 20));
+      label(`${fmt2(state.dims.W || 0)}" (W)`, Math.max(36, bbox.x - 40), bbox.y + bbox.height / 2);
     } else if (state.shape === 'circle') {
-      label(`${fmt2(state.dims.D || 0)}" Ø`, bbox.x + bbox.width / 2, Math.max(24, bbox.y - 18));
+      label(`${fmt2(state.dims.D || 0)}" Ø`, bbox.x + bbox.width / 2, Math.max(28, bbox.y - 20));
     } else if (state.shape === 'polygon') {
-      label(`${state.dims.n || 6}-sides, ${fmt2(state.dims.A || 0)}" side`, bbox.x + bbox.width / 2, Math.max(24, bbox.y - 18));
+      label(`${state.dims.n || 6}-sides, ${fmt2(state.dims.A || 0)}" side`, bbox.x + bbox.width / 2, Math.max(28, bbox.y - 20));
     }
 
     // sinks (rectangle only)
@@ -731,7 +835,7 @@ window.addEventListener('resize', () => {
         }
         node.setAttribute('fill', 'rgba(255,255,255,0.001)');
         node.setAttribute('stroke', '#d00');
-        node.setAttribute('stroke-width', '2');
+        node.setAttribute('stroke-width', isMobile()? '3' : '2');
         node.style.cursor = 'grab';
         sinksG.appendChild(node);
 
@@ -756,7 +860,7 @@ window.addEventListener('resize', () => {
           c.setAttribute('r', holeR);
           c.setAttribute('fill', 'rgba(255,255,255,0.6)');
           c.setAttribute('stroke', '#111');
-          c.setAttribute('stroke-width', '2');
+          c.setAttribute('stroke-width', isMobile()? '3' : '2');
           sinksG.appendChild(c);
         });
 
@@ -840,28 +944,31 @@ window.addEventListener('resize', () => {
 
   function updateStepHints() {
     const isRect = state.shape === 'rectangle';
-    const sinksBlock = el('#rcg-sinks-block', mount);
-    const note = el('#rcg-nonrect-note', mount);
+    const sinksBlock = el('#rcg-sinks-block', appRoot);
+    const note = el('#rcg-nonrect-note', appRoot);
     if (sinksBlock) sinksBlock.classList.toggle('rcg-hidden', !isRect);
     if (note) note.style.display = isRect ? 'none' : 'block';
   }
 
   function goto(step) {
     state.step = clamp(step, 1, visibleStepCount());
-    els('.rcg-step', mount).forEach((s, i) => s.classList.toggle('rcg-hidden', i !== state.step - 1));
+    els('.rcg-step', appRoot).forEach((s, i) => s.classList.toggle('rcg-hidden', i !== state.step - 1));
 
-    el('#rcg-stepper', mount).textContent = `Step ${state.step}/4`;
-    el('#rcg-stepper-top', mount).textContent = `Step ${state.step}/4`;
-    el('#rcg-step-title', mount).textContent = SECTION_TITLES[state.step] || '';
+    el('#rcg-stepper', appRoot).textContent = `Step ${state.step}/4`;
+    const top = el('#rcg-stepper-top', mount);
+    if (top) top.textContent = `Step ${state.step}/4`;
+    el('#rcg-step-title', appRoot).textContent = SECTION_TITLES[state.step] || '';
 
     drawShape();
     updateNav();
     updateStepHints();
+    // mobile inset updates (sheet changes per step)
+    syncMobilePreviewInset();
   }
 
   function updateNav() {
-    const back = el('#rcg-back', mount);
-    const next = el('#rcg-next', mount);
+    const back = el('#rcg-back', appRoot);
+    const next = el('#rcg-next', appRoot);
 
     back.style.visibility = state.step === 1 ? 'hidden' : 'visible';
     next.style.display = state.step === 4 ? 'none' : 'inline-block';
@@ -873,28 +980,28 @@ window.addEventListener('resize', () => {
     next.disabled = disableNext;
   }
 
-  el('#rcg-back', mount).onclick = () => goto(state.step - 1);
-  el('#rcg-next', mount).onclick = () => {
+  el('#rcg-back', appRoot).onclick = () => goto(state.step - 1);
+  el('#rcg-next', appRoot).onclick = () => {
     if (state.step === 1) { if (state.shape === 'rectangle') goto(2); else goto(4); return; }
     if (state.step === 2) { goto(3); return; }
     if (state.step === 3) { goto(4); return; }
   };
 
   // polish radios
-  els('input[name="rcg-polish"]', mount).forEach(r => r.addEventListener('change', () => {
+  els('input[name="rcg-polish"]', appRoot).forEach(r => r.addEventListener('change', () => {
     state.polishMode = r.value;
     if (state.polishMode === 'none') state.edges = [];
     drawShape(); updateNav();
   }));
 
   // backsplash
-  const backsplashToggle = el('#rcg-backsplash', mount);
+  const backsplashToggle = el('#rcg-backsplash', appRoot);
   if (backsplashToggle) backsplashToggle.addEventListener('change', () => {
     state.backsplash = backsplashToggle.checked;
   });
 
   // stone dropdown
-  const colorSel = el('#rcg-color', mount);
+  const colorSel = el('#rcg-color', appRoot);
   if (colorSel) {
     colorSel.value = DEFAULT_COLOR;
     colorSel.addEventListener('change', () => { state.color = colorSel.value; drawShape(); });
@@ -904,7 +1011,7 @@ window.addEventListener('resize', () => {
   // Step 1 dim inputs
   // -----------------------------
   function buildDimInputs() {
-    const h = el('#rcg-dims', mount);
+    const h = el('#rcg-dims', appRoot);
     if (!state.shape) {
       h.innerHTML = '<div class="rcg-sub">Choose a shape to set measurements.</div>';
       return;
@@ -926,34 +1033,34 @@ window.addEventListener('resize', () => {
     }
 
     const onInput = () => { readDims(); drawShape(); };
-    h.addEventListener('input', onInput);
+    h.oninput = onInput;
 
-    h.addEventListener('change', () => {
+    h.onchange = () => {
       ['#dim-L', '#dim-W', '#dim-D', '#dim-A'].forEach(sel => {
-        const i = el(sel, mount);
+        const i = el(sel, appRoot);
         if (i && i.value !== '') i.value = fmt2(i.value);
       });
-      if (el('#dim-N', mount)) {
-        const n = parseInt(el('#dim-N', mount).value || '6', 10);
+      if (el('#dim-N', appRoot)) {
+        const n = parseInt(el('#dim-N', appRoot).value || '6', 10);
         const sMax = (MAX_DIAM * Math.sin(Math.PI / n)).toFixed(2);
-        const a = el('#dim-A', mount);
+        const a = el('#dim-A', appRoot);
         if (a) {
           a.max = sMax;
           if (parseFloat(a.value) > parseFloat(sMax)) a.value = sMax;
         }
       }
       readDims(); drawShape();
-    });
+    };
 
     readDims();
   }
 
   function readDims() {
-    const L = parseFloat(el('#dim-L', mount)?.value || 0);
-    const W = parseFloat(el('#dim-W', mount)?.value || 0);
-    const D = parseFloat(el('#dim-D', mount)?.value || 0);
-    const A = parseFloat(el('#dim-A', mount)?.value || 0);
-    const N = parseInt(el('#dim-N', mount)?.value || 0, 10);
+    const L = parseFloat(el('#dim-L', appRoot)?.value || 0);
+    const W = parseFloat(el('#dim-W', appRoot)?.value || 0);
+    const D = parseFloat(el('#dim-D', appRoot)?.value || 0);
+    const A = parseFloat(el('#dim-A', appRoot)?.value || 0);
+    const N = parseInt(el('#dim-N', appRoot)?.value || 0, 10);
 
     if (state.shape === 'rectangle') state.dims = { L: clamp(L, 1, MAX_LEN), W: clamp(W, 1, MAX_WID) };
     else if (state.shape === 'circle') state.dims = { D: clamp(D, 1, MAX_DIAM) };
@@ -974,7 +1081,7 @@ window.addEventListener('resize', () => {
     state.backsplash = false;
     state.polishMode = 'select';
 
-    els('[data-icon]', mount).forEach(b => b.classList.toggle('active', b.dataset.icon === icon));
+    els('[data-icon]', appRoot).forEach(b => b.classList.toggle('active', b.dataset.icon === icon));
     buildDimInputs();
     updateStepHints();
     drawShape();
@@ -984,9 +1091,9 @@ window.addEventListener('resize', () => {
   // -----------------------------
   // Step 3 sinks UI
   // -----------------------------
-  const addBtn = el('#rcg-add-sink', mount);
-  const selSink = el('#rcg-sink-select', mount);
-  const sinkPills = el('#rcg-sink-pills', mount);
+  const addBtn = el('#rcg-add-sink', appRoot);
+  const selSink = el('#rcg-sink-select', appRoot);
+  const sinkPills = el('#rcg-sink-pills', appRoot);
 
   function sinkFits(template) {
     if (state.shape !== 'rectangle') return false;
@@ -1158,7 +1265,7 @@ window.addEventListener('resize', () => {
   }
 
   function currentConfig() {
-    const zip = (el('#rcg-zip', mount)?.value || '').trim();
+    const zip = (el('#rcg-zip', appRoot)?.value || '').trim();
     const p = computePricing(zip || ORIGIN_ZIP_DEFAULT);
     return {
       shape: state.shape,
@@ -1185,8 +1292,8 @@ window.addEventListener('resize', () => {
   }
 
   // Checkout
-  el('#rcg-checkout', mount).onclick = () => {
-    const zip = (el('#rcg-zip', mount).value || '').trim();
+  el('#rcg-checkout', appRoot).onclick = () => {
+    const zip = (el('#rcg-zip', appRoot).value || '').trim();
     if (!/^\d{5}$/.test(zip)) return alert('Enter a valid 5-digit ZIP to continue.');
     const payload = currentConfig();
     window.location.assign('/config-checkout?cfg=' + encodeCfg(payload));
@@ -1298,9 +1405,9 @@ window.addEventListener('resize', () => {
   }
 
   // Email DXF (client -> server)
-  el('#rcg-email-dxf', mount).onclick = async () => {
+  el('#rcg-email-dxf', appRoot).onclick = async () => {
     try{
-      const email = (el('#rcg-email', mount)?.value || '').trim();
+      const email = (el('#rcg-email', appRoot)?.value || '').trim();
       if(!email){ alert('Enter an email address to send the DXF.'); return; }
 
       const cfg = currentConfig();
@@ -1331,81 +1438,78 @@ window.addEventListener('resize', () => {
   };
 
   // -----------------------------
-  // Desktop: draggable panel
+  // Desktop: draggable panel (smooth, no “cursor hop”)
   // -----------------------------
+  const panel = el('#rcg-panel', appRoot);
+  const handle = el('#rcg-panel-handle', appRoot);
+
+  function setHandleMode() {
+    if (!handle) return;
+    handle.classList.toggle('desktop-draggable', isDesktop());
+  }
+
   (function enablePanelDrag(){
-    const panel = el('#rcg-panel', mount);
-    const handle = el('#rcg-panel-handle', mount);
     if(!panel || !handle) return;
 
-    function syncMobilePreviewInset(){
-  const panel = document.getElementById('rcg-panel');
-  const preview = document.querySelector('.rcg-preview');
-  if(!panel || !preview) return;
+    let dragging = false;
+    let grabOffsetX = 0;
+    let grabOffsetY = 0;
 
-  const isMobile = () => window.matchMedia('(max-width: 980px)').matches;
-
-  const apply = () => {
-    if(!isMobile()){
-      preview.style.removeProperty('--rcg-sheet-h');
-      return;
+    function getBoundsRect() {
+      // constrain within the whole configurator body so it never disappears
+      const body = el('.rcg-body', appRoot);
+      return body ? body.getBoundingClientRect() : document.documentElement.getBoundingClientRect();
     }
-    const h = panel.getBoundingClientRect().height || 0;
-    preview.style.setProperty('--rcg-sheet-h', `${Math.ceil(h)}px`);
-  };
-
-  apply();
-  window.addEventListener('resize', apply);
-
-  // Keep in sync as the panel contents change between steps
-  const ro = new ResizeObserver(apply);
-  ro.observe(panel);
-}
-
-syncMobilePreviewInset();
-
-    // only draggable on desktop
-    const setHandleMode = () => handle.classList.toggle('desktop-draggable', !isMobile());
-    setHandleMode();
-    window.addEventListener('resize', setHandleMode);
-
-    let dragging = false, startX = 0, startY = 0, startLeft = 0, startTop = 0;
-    const px = n => `${n}px`;
 
     function onDown(e){
-  if(isMobile()) return;
-  dragging = true;
+      if(!isDesktop()) return;
+      dragging = true;
 
-  const rect = panel.getBoundingClientRect();
-  startLeft = rect.left;
-  startTop = rect.top;
-  startX = e.clientX;
-  startY = e.clientY;
+      const pr = panel.getBoundingClientRect();
+      grabOffsetX = e.clientX - pr.left;
+      grabOffsetY = e.clientY - pr.top;
 
-  handle.style.cursor = 'grabbing';
-  document.body.style.userSelect = 'none';
+      handle.style.cursor = 'grabbing';
+      document.body.style.userSelect = 'none';
 
-  e.preventDefault();
-}
+      // switch to left/top positioning (removes "right" anchoring)
+      panel.style.right = 'auto';
+
+      e.preventDefault();
+    }
 
     function onMove(e){
       if(!dragging) return;
-      const dx = e.clientX - startX;
-      const dy = e.clientY - startY;
 
-      const newLeft = clamp(startLeft + dx, 12, window.innerWidth - panel.offsetWidth - 12);
-      const newTop  = clamp(startTop + dy, 56, window.innerHeight - panel.offsetHeight - 12);
+      const bounds = getBoundsRect();
+      const pw = panel.offsetWidth;
+      const ph = panel.offsetHeight;
 
-      panel.style.left = px(newLeft);
-      panel.style.top  = px(newTop);
-      panel.style.right = 'auto';
+      // desired top-left (absolute in viewport)
+      let left = e.clientX - grabOffsetX;
+      let top  = e.clientY - grabOffsetY;
+
+      // constrain inside bounds
+      const minL = bounds.left + 8;
+      const minT = bounds.top + 8;
+      const maxL = bounds.right - pw - 8;
+      const maxT = bounds.bottom - ph - 8;
+
+      left = clamp(left, minL, maxL);
+      top  = clamp(top,  minT, maxT);
+
+      // convert viewport coords to parent-relative coords
+      const parent = panel.offsetParent || panel.parentElement;
+      const parentRect = parent.getBoundingClientRect();
+      panel.style.left = `${Math.round(left - parentRect.left)}px`;
+      panel.style.top  = `${Math.round(top  - parentRect.top)}px`;
     }
-    
+
     function onUp(){
-  dragging = false;
-  handle.style.cursor = 'grab';
-  document.body.style.userSelect = '';
-}
+      dragging = false;
+      handle.style.cursor = isDesktop() ? 'grab' : '';
+      document.body.style.userSelect = '';
+    }
 
     handle.addEventListener('mousedown', onDown);
     window.addEventListener('mousemove', onMove);
@@ -1413,9 +1517,41 @@ syncMobilePreviewInset();
   })();
 
   // -----------------------------
+  // Mobile: keep preview tappable above bottom sheet
+  // -----------------------------
+  let ro = null;
+  function syncMobilePreviewInset() {
+    const preview = el('.rcg-preview', appRoot);
+    const panel = el('#rcg-panel', appRoot);
+    if(!preview || !panel) return;
+
+    const apply = () => {
+      if(!isMobile()){
+        preview.style.removeProperty('--rcg-sheet-h');
+        return;
+      }
+      const h = panel.getBoundingClientRect().height || 0;
+      preview.style.setProperty('--rcg-sheet-h', `${Math.ceil(h)}px`);
+    };
+
+    apply();
+    if (ro) ro.disconnect();
+    ro = new ResizeObserver(apply);
+    ro.observe(panel);
+  }
+
+  // -----------------------------
   // Init
   // -----------------------------
+  renderShapeIcons(el('#shape-icons', appRoot));
+  setHandleMode();
+  window.addEventListener('resize', () => { setHandleMode(); syncMobilePreviewInset(); });
+
   setShapeFromIcon('square');
   refreshSinkPills();
   goto(1);
+
+  // If user opens modal later, ensure inset is correct
+  syncMode();
+
 })();
