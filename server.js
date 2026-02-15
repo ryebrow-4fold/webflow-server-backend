@@ -5,6 +5,11 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import Stripe from 'stripe';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Find the best available customer email from a Checkout Session
 async function getCustomerEmailFromSession(session) {
@@ -445,7 +450,7 @@ function renderInternalEmailHTML(cfg, session) {
   `;
 }
 
-// ---------- Stripe Webhook (must stay BEFORE express.json) ----------
+// ----------  (must stay BEFORE express.json) ----------
 app.post(
   '/api/checkout-webhook',
   express.raw({ type: 'application/json' }),
@@ -610,6 +615,9 @@ if (isValidEmail(customerEmail)) {
     res.json({ received: true });
   }
 );
+
+// ✅ ADD THIS BLOCK (static files from /public)
+app.use(express.static(path.join(__dirname, 'public')));
 
 // ---------------------------- CORS + JSON (after webhook) ---------------------
 const corsOptions = {
