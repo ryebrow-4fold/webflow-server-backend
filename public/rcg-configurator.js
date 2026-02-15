@@ -245,7 +245,9 @@
         background:#fff;
         position: relative;
         overflow: hidden;
-        padding-bottom: var(--rcg-sheet-h, 0px); /* mobile: reserve for bottom sheet */
+        padding-bottom: calc(var(--rcg-sheet-h, 0px) * 0.55); /* mobile: reserve for bottom sheet */
+
+}
       }
       .rcg-stage{
         width:100%;
@@ -366,7 +368,7 @@
           <div class="rcg-topbar">
             <div class="left">
               <img class="rcg-logo ${LOGO_URL ? 'rcg-has':''}" ${LOGO_URL ? `src="${LOGO_URL}"` : ''} alt="">
-              <div class="title">Rock Creek Granite</div>
+              <div class="title" style="position:absolute;left:-9999px;">Rock Creek Granite</div>
               <div class="meta" id="rcg-stepper-top">Step 1/4</div>
             </div>
             <button class="rcg-close" id="rcg-close">Close</button>
@@ -841,10 +843,25 @@
 
         // faucet holes preview (1.25" Ø)
         const holeR = toPx(1.25 / 2);
-        const centerX = gx + gw / 2;
-        const topOfSink = gy;
-        const holeY = topOfSink - toPx(2);
-        const holes = [];
+        const holeY = (ny - (gh / 2)) - toPx(2);
+        const holesNow = [];
+        
+        if (snk.faucet === '3' && (snk.spread === 4 || snk.spread === 8)) {
+            const off = toPx((snk.spread / 2));
+            holesNow.push([nx - off, holeY], [nx, holeY], [nx + off, holeY]);
+        } else {
+            holesNow.push([nx, holeY]);
+        }
+        
+        const holeEls = Array.from(sinksG.querySelectorAll(`circle[data-sinkhole="${snk.id}"]`));
+        holeEls.forEach((c, i) => {
+            const pt = holesNow[i];
+            
+            if (!pt) { c.remove(); return; }
+            c.setAttribute('cx', pt[0]);
+            c.setAttribute('cy', pt[1]);
+            c.setAttribute('r', holeR);
+        });
 
         if (snk.faucet === '3' && (snk.spread === 4 || snk.spread === 8)) {
           const off = toPx((snk.spread / 2));
@@ -855,6 +872,8 @@
 
         holes.forEach(([hx, hy]) => {
           const c = document.createElementNS(ns, 'circle');
+          c.setAttribute('data-sinkhole', snk.id);
+          c.setAttribute('data-hole-idx', String(holeIdx));
           c.setAttribute('cx', hx);
           c.setAttribute('cy', hy);
           c.setAttribute('r', holeR);
@@ -917,14 +936,26 @@
           });
 
           if (!collide) {
-            nodeCenterX = nx; nodeCenterY = ny;
-            snk.x = xin; snk.y = yin;
-            drawShape();
-          }
+  nodeCenterX = nx; nodeCenterY = ny;
+  snk.x = xin; snk.y = yin;
+
+  // Move the element live (smooth)
+  if (tpl.shape === 'oval') {
+    node.setAttribute('cx', nx);
+    node.setAttribute('cy', ny);
+  } else {
+    node.setAttribute('x', nx - (gw / 2));
+    node.setAttribute('y', ny - (gh / 2));
+  }
+
+  // Also move faucet hole preview circles (we can tag them for this)
+  // (See the small tag patch below.)
+}
         }
         function onUp() {
           dragging = false;
           node.style.cursor = 'grab';
+          drawShape();
         }
 
         node.addEventListener('mousedown', onDown);
