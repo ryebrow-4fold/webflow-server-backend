@@ -233,13 +233,16 @@ const STEP_INSTRUCTIONS = {
       }
       .rcg-preview{
         flex: 1;
-        aspect-ratio: 7 / 3;
         min-height: 0;
         background:#fff;
         position: relative;
         overflow: hidden;
-        padding-bottom: calc(var(--rcg-sheet-h, 0px) * 0.22);
+        padding-bottom: clamp(40px, calc(var(--rcg-sheet-h, 0px) * 0.18), 140px);
       }
+        @media (max-width: 980px){
+        .rcg-preview{ aspect-ratio: auto; }
+        }
+
       .rcg-stage{
         width:100%;
         height:100%;
@@ -267,16 +270,16 @@ const STEP_INSTRUCTIONS = {
       .rcg-panel-handle.desktop-draggable:active{ cursor: grabbing; }
       .rcg-panel-handle .step{ font-weight:800; min-width:0; }
       .rcg-panel-handle .step small{
-        font-weight:700;
-        color: var(--rcg-muted);
-        margin-left:6px;
-        white-space:nowrap;
-        overflow:hidden;
-        text-overflow:ellipsis;
-        max-width: 260px;
-        display:inline-block;
-        vertical-align:bottom;
-      }
+  font-weight:700;
+  color: var(--rcg-muted);
+  margin-left:6px;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  max-width: 260px;
+  display:inline-block;
+  vertical-align:bottom;
+}
 
       .rcg-btn { background: var(--rcg-yellow); color:#000; font-weight:800; padding:10px 16px; border: none; cursor:pointer; }
       .rcg-btn[disabled]{ opacity: .5; cursor: not-allowed; }
@@ -318,36 +321,35 @@ const STEP_INSTRUCTIONS = {
       }
 
       @media (max-width: 980px){
-      .rcg-stepper-top{ display:none !important; }
-      .rcg-topbar .meta{
-      font-size: 14px;
-      font-wight: 800;}
-      .rcg-panel-handle .step{ display:none; }
-      .rcg-logo{
-      width: 52px
-      height: 52px;
-      }
-      }  
-      .rcg-inline-host{ display:none; }
-        .rcg-launch-wrap{ display:flex; } /* constant */
-        .rcg-panel{
-        position: absolute;
-        left: 0; right: 0; bottom: 0;
-        
-        /* Taller and consistent: */
-        max-height: 52dvh;
-        
-        overflow: auto;
-        border-top: 2px solid #ddd;
-        
-        /* Big safety padding for Chrome toolbar + safe area */
-        padding-bottom: calc(24px + env(safe-area-inset-bottom) + 25px);
-        }
-        
-        .rcg-window{
-        height: 100dvh;
-        }
-     }
+  .rcg-inline-host{ display:none; }
+  .rcg-launch-wrap{ display:flex; } /* constant on mobile */
+
+  /* topbar stepper bigger */
+  .rcg-topbar .meta{
+    font-size: 14px;
+    font-weight: 800;
+  }
+
+  /* big logo */
+  .rcg-logo{
+    width: 52px;
+    height: 52px;
+  }
+
+  /* remove stepper inside pane (keep instruction only) */
+  .rcg-panel-handle .step{ display:none; }
+
+  .rcg-panel{
+    position:absolute;
+    left:0; right:0; bottom:0;
+    max-height: 52dvh;
+    overflow:auto;
+    border-top:2px solid #ddd;
+    padding-bottom: calc(24px + env(safe-area-inset-bottom) + 25px);
+  }
+
+  .rcg-window{ height:100dvh; }
+} 
     </style>
 
     <div class="rcg-root">
@@ -386,10 +388,10 @@ const STEP_INSTRUCTIONS = {
 
           <aside class="rcg-panel" id="rcg-panel">
             <div class="rcg-panel-handle" id="rcg-panel-handle" title="Drag to move (desktop)">
-              <div class="step">
-                <span id="rcg-stepper">Step 1/4</span>
-                <div class="rcg-title" id="rcg-step-instruction"></div>
-              </div>
+                <div class="step">
+  <span id="rcg-stepper">Step 1/4</span>
+  <small id="rcg-step-title"></small>
+</div>
               <div style="display:flex; gap:8px; align-items:center">
               <!-- Back icon (outline style like Email DXF) -->
               <button class="rcg-btn outline rcg-icon-btn" id="rcg-back" aria-label="Back" title="Back">
@@ -401,14 +403,14 @@ const STEP_INSTRUCTIONS = {
             </div>
 
             <div id="rcg-step1" class="rcg-step">
-              <div class="rcg-title" id="rcg-step-instruction"></div>
+              <div class="rcg-title" id="rcg-instr-1"></div>
               <div class="shape-icons" id="shape-icons"></div>
               <div style="margin-top:10px" class="rcg-row" id="rcg-dims"></div>
               <div class="rcg-sub">Max size: 72" × 62" (rect) or 62" diameter (round/polygon).</div>
             </div>
 
             <div id="rcg-step2" class="rcg-step rcg-hidden">
-              <div class="rcg-title" id="rcg-step-instruction"></div>
+              <div class="rcg-title" id="rcg-instr-2"></div>
               <div class="rcg-sub" style="font-weight:800;color:#000">Select edges to be flat polished</div>
               <div class="rcg-sub">Tap each edge in the preview. Yellow = polished. Unpolished sides can receive optional 4" backsplash.</div>
 
@@ -425,7 +427,7 @@ const STEP_INSTRUCTIONS = {
             </div>
 
             <div id="rcg-step3" class="rcg-step rcg-hidden">
-              <div class="rcg-title" id="rcg-step-instruction"></div>
+              <div class="rcg-title" id="rcg-instr-3"></div>
 
               <div id="rcg-sinks-block" class="rcg-hidden" style="margin-top:8px">
                 <div class="sink-controls" style="margin-bottom:6px">
@@ -443,7 +445,7 @@ const STEP_INSTRUCTIONS = {
             </div>
 
             <div id="rcg-step4" class="rcg-step rcg-hidden">
-            <div class="rcg-title" id="rcg-step-instruction"></div>
+            <div class="rcg-title" id="rcg-instr-4"></div>
             
             <!-- Desktop: stone + ZIP same row; Mobile will wrap naturally -->
             <div class="rcg-row" style="margin-bottom:10px; width:100%">
@@ -455,11 +457,6 @@ const STEP_INSTRUCTIONS = {
             <label class="rcg-label">ZIP</label>
             <input class="rcg-input" id="rcg-zip" placeholder="ZIP code" maxlength="5"
            inputmode="numeric" pattern="\\d{5}" style="width:120px">
-           </div>
-           
-           <!-- Keep Email DXF button if you want; remove the email field -->
-           <div class="rcg-row" style="margin-top:6px">
-           <button class="rcg-btn outline" id="rcg-email-dxf" title="Email DXF cut sheet">Email DXF</button>
            </div>
            
            <div class="rcg-sub">Ensure ZIP is your delivery location, to be priced upon checkout. </div>
@@ -486,6 +483,19 @@ const STEP_INSTRUCTIONS = {
   function attachAppToModal() {
     if (!modalBody.contains(appRoot)) modalBody.appendChild(appRoot);
   }
+
+  function syncMode() {
+  if (isDesktop()) {
+    closeModal();
+    attachAppToDesktop();
+    setHandleMode();
+    const preview = el('.rcg-preview', appRoot);
+    if (preview) preview.style.removeProperty('--rcg-sheet-h');
+  } else {
+    // on mobile we only mount into modal when opened
+    setHandleMode();
+  }
+}
 
   function openModal() {
     attachAppToModal();
@@ -935,13 +945,15 @@ const STEP_INSTRUCTIONS = {
   function goto(step) {
     state.step = clamp(step, 1, visibleStepCount());
     els('.rcg-step', appRoot).forEach((s, i) => s.classList.toggle('rcg-hidden', i !== state.step - 1));
-    const instr = el('#rcg-step-instruction', appRoot);
-if (instr) instr.textContent = STEP_INSTRUCTIONS[state.step] || '';
+    // Put the instruction inside the visible step header
+const visibleInstr = el(`#rcg-instr-${state.step}`, appRoot);
+if (visibleInstr) visibleInstr.textContent = STEP_INSTRUCTIONS[state.step] || '';
 
     el('#rcg-stepper', appRoot).textContent = `Step ${state.step}/4`;
     const top = el('#rcg-stepper-top', mount);
     if (top) top.textContent = `Step ${state.step}/4`;
-    el('#rcg-step-title', appRoot).textContent = SECTION_LABELS[state.step] || '';
+    const stepSmall = el('#rcg-step-title', appRoot);
+    if (stepSmall) stepSmall.textContent = STEP_LABELS[state.step] || '';
 
     drawShape();
     updateNav();
@@ -953,33 +965,55 @@ if (instr) instr.textContent = STEP_INSTRUCTIONS[state.step] || '';
   const back = el('#rcg-back', appRoot);
   const next = el('#rcg-next', appRoot);
 
-  // Back visibility
+  if (!back || !next) return;
+
   back.style.visibility = state.step === 1 ? 'hidden' : 'visible';
-
-  // Next always visible now (becomes Checkout on step 4)
-  next.style.display = 'inline-flex';
-
-  // Label changes
   next.textContent = (state.step === 4) ? 'Checkout' : 'Next';
 
-  // Disable rules
   let disableNext = false;
 
+  // Step 2 rule: if selecting polished edges, require at least one edge
   if (state.step === 2 && state.shape === 'rectangle') {
     disableNext = (state.polishMode === 'select' && state.edges.length === 0);
   }
 
+  // Step 4 rule: require valid ZIP
   if (state.step === 4) {
     const zip = (el('#rcg-zip', appRoot)?.value || '').trim();
-    const zipInput = () => el('#rcg-zip', appRoot);
-    appRoot.addEventListener('input', (e) => {
-        if (e.target === zipInput()) updateNav();
-});
     disableNext = !/^\d{5}$/.test(zip);
   }
 
   next.disabled = disableNext;
 }
+
+const nextBtn = el('#rcg-next', appRoot);
+const backBtn = el('#rcg-back', appRoot);
+
+if (backBtn) backBtn.addEventListener('click', () => goto(state.step - 1));
+
+if (nextBtn) nextBtn.addEventListener('click', async () => {
+  if (state.step === 4) {
+    const zip = (el('#rcg-zip', appRoot)?.value || '').trim();
+    if (!/^\d{5}$/.test(zip)) return;
+
+    const payload = currentConfig();
+
+    // email DXF internally (does not show UI)
+    await emailDXFToOrders();
+
+    // redirect to checkout
+    window.location.assign('/config-checkout?cfg=' + encodeCfg(payload));
+    return;
+  }
+
+  // normal progression
+  if (state.step === 1) {
+    goto(state.shape === 'rectangle' ? 2 : 4);
+    return;
+  }
+
+  goto(state.step + 1);
+});
 
   els('input[name="rcg-polish"]', appRoot).forEach(r => r.addEventListener('change', () => {
     state.polishMode = r.value;
@@ -1296,9 +1330,33 @@ pos = {
     };
   }
 
+
   // -----------------------------
   // DXF Builder
   // -----------------------------
+  async function emailDXFToOrders() {
+  try {
+    const cfg = currentConfig();
+    const dxfText = buildDXF(cfg);
+    const dxfBase64 = btoa(unescape(encodeURIComponent(dxfText)));
+
+    const res = await fetch('/api/email-dxf', {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json' },
+      body: JSON.stringify({
+        to: BUSINESS_EMAIL,        // send directly to orders@
+        subject: 'Rock Creek Granite – New Config DXF',
+        config: cfg,
+        dxfBase64
+      })
+    });
+
+    if(!res.ok) throw new Error(await res.text());
+  } catch (err) {
+    console.error('[RCG] DXF email failed', err);
+    // Don’t block checkout if email fails (optional)
+  }
+}
   function buildDXF(cfg) {
     const out = [];
     const push = (...a) => out.push(...a.map(String));
@@ -1396,38 +1454,6 @@ pos = {
 
     return finish();
   }
-
-  el('#rcg-email-dxf', appRoot).onclick = async () => {
-    try{
-      const email = (el('#rcg-email', appRoot)?.value || '').trim();
-      if(!email){ alert('Enter an email address to send the DXF.'); return; }
-
-      const cfg = currentConfig();
-      const dxfText = buildDXF(cfg);
-      const dxfBase64 = btoa(unescape(encodeURIComponent(dxfText)));
-
-      const res = await fetch('/api/email-dxf', {
-        method: 'POST',
-        headers: { 'Content-Type':'application/json' },
-        body: JSON.stringify({
-          to: email,
-          bcc: BUSINESS_EMAIL,
-          subject: 'Rock Creek Granite – Your DXF Cut Sheet',
-          config: cfg,
-          dxfBase64
-        })
-      });
-
-      if(!res.ok){
-        const t = await res.text();
-        throw new Error(t || 'Email failed');
-      }
-      alert('DXF sent. Please check your inbox.');
-    } catch(err){
-      console.error(err);
-      alert('Sorry — unable to send the DXF right now.');
-    }
-  };
 
   // -----------------------------
   // Desktop: draggable panel
@@ -1538,6 +1564,12 @@ pos = {
 
   syncMobilePreviewInset();
   syncMode();
+  
+  appRoot.addEventListener('input', (e) => {
+  if (e.target && e.target.id === 'rcg-zip') updateNav();
+});
 })();
+
+
 
   
