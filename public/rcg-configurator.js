@@ -52,7 +52,16 @@
     { max: Infinity, mult: 1.85 }
   ];
 
-  const SECTION_TITLES = {
+  // Short label shown next to "Step X/4"
+const STEP_LABELS = {
+  1: 'Define your shape',
+  2: 'Choose Polished Sides',
+  3: 'Add Sinks & Faucet Holes',
+  4: 'Select Stone & Ship'
+};
+
+// Large instructional headline inside panel
+const STEP_INSTRUCTIONS = {
   1: 'Select your starting geometry',
   2: 'Select edges to be flat polished',
   3: 'Include and position sinks',
@@ -354,7 +363,7 @@
             <div class="rcg-panel-handle" id="rcg-panel-handle" title="Drag to move (desktop)">
               <div class="step">
                 <span id="rcg-stepper">Step 1/4</span>
-                <small id="rcg-step-title">${SECTION_TITLES[1]}</small>
+                <div class="rcg-title" id="rcg-step-instruction"></div>
               </div>
               <div style="display:flex; gap:8px">
                 <button class="rcg-btn outline" id="rcg-back">Back</button>
@@ -363,14 +372,14 @@
             </div>
 
             <div id="rcg-step1" class="rcg-step">
-              <div class="rcg-title">${SECTION_TITLES[1]}</div>
+              <div class="rcg-title" id="rcg-step-instruction"></div>
               <div class="shape-icons" id="shape-icons"></div>
               <div style="margin-top:10px" class="rcg-row" id="rcg-dims"></div>
               <div class="rcg-sub">Max size: 72" × 62" (rect) or 62" diameter (round/polygon).</div>
             </div>
 
             <div id="rcg-step2" class="rcg-step rcg-hidden">
-              <div class="rcg-title">${SECTION_TITLES[2]}</div>
+              <div class="rcg-title" id="rcg-step-instruction"></div>
               <div class="rcg-sub" style="font-weight:800;color:#000">Select edges to be flat polished</div>
               <div class="rcg-sub">Tap each edge in the preview. Yellow = polished. Unpolished sides can receive optional 4" backsplash.</div>
 
@@ -387,7 +396,7 @@
             </div>
 
             <div id="rcg-step3" class="rcg-step rcg-hidden">
-              <div class="rcg-title">${SECTION_TITLES[3]}</div>
+              <div class="rcg-title" id="rcg-step-instruction"></div>
 
               <div id="rcg-sinks-block" class="rcg-hidden" style="margin-top:8px">
                 <div class="sink-controls" style="margin-bottom:6px">
@@ -405,7 +414,7 @@
             </div>
 
             <div id="rcg-step4" class="rcg-step rcg-hidden">
-              <div class="rcg-title">${SECTION_TITLES[4]}</div>
+              <div class="rcg-title" id="rcg-step-instruction"></div>
 
               <div class="rcg-row" style="margin-bottom:10px; width:100%">
                 <label class="rcg-label">Stone</label>
@@ -898,11 +907,13 @@
   function goto(step) {
     state.step = clamp(step, 1, visibleStepCount());
     els('.rcg-step', appRoot).forEach((s, i) => s.classList.toggle('rcg-hidden', i !== state.step - 1));
+    const instr = el('#rcg-step-instruction', appRoot);
+if (instr) instr.textContent = STEP_INSTRUCTIONS[state.step] || '';
 
     el('#rcg-stepper', appRoot).textContent = `Step ${state.step}/4`;
     const top = el('#rcg-stepper-top', mount);
     if (top) top.textContent = `Step ${state.step}/4`;
-    el('#rcg-step-title', appRoot).textContent = SECTION_TITLES[state.step] || '';
+    el('#rcg-step-title', appRoot).textContent = SECTION_LABELS[state.step] || '';
 
     drawShape();
     updateNav();
