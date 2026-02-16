@@ -196,7 +196,7 @@ const STEP_INSTRUCTIONS = {
       .rcg-topbar .left{ display:flex; align-items:center; gap:10px; min-width: 0; }
       .rcg-topbar .meta{ font-size:12px; color:#555; white-space:nowrap; }
       .rcg-logo{
-        width: 44px; height: 44px;
+        width: 52px; height: 52px;
         object-fit: contain;
         display:none;
       }
@@ -318,7 +318,7 @@ const STEP_INSTRUCTIONS = {
           border-top: 2px solid #ddd;
 
           /* +25px and safe area for toolbar overlap */
-          padding-bottom: calc(26px + 68px + env(safe-area-inset-bottom, 0px));
+          padding-bottom: calc(30px + 70px + env(safe-area-inset-bottom, 0px));
         }
         .rcg-panel-handle{ position: sticky; top: 0; z-index: 5; }
         .rcg-title{ font-size: 20px; }
