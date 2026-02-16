@@ -580,31 +580,17 @@ const STEP_INSTRUCTIONS = {
 
           <aside class="rcg-panel" id="rcg-panel">
   <div class="rcg-panel-handle" id="rcg-panel-handle" title="Drag to move (desktop)">
-  <div class="rcg-pane-left">
-  <div class="step">
-    <span id="rcg-pane-label"></span>
-  </div>
-  <div id="rcg-pane-meta" class="rcg-pane-meta"></div>
-</div>
-
-<div class="rcg-pane-actions">
-  <button class="rcg-btn outline rcg-icon-btn" id="rcg-back" aria-label="Back" title="Back">
-    <span aria-hidden="true">‹</span>
-  </button>
-
-  <button class="rcg-btn" id="rcg-next">Next</button>
-</div>
-    <div class="step">
-      <span id="rcg-pane-label"></span>
+    <div class="rcg-pane-left">
+      <div class="step">
+        <span id="rcg-pane-label"></span>
+      </div>
+      <div id="rcg-pane-meta" class="rcg-pane-meta"></div>
     </div>
 
-    <div style="display:flex; gap:8px; align-items:center">
+    <div class="rcg-pane-actions">
       <button class="rcg-btn outline rcg-icon-btn" id="rcg-back" aria-label="Back" title="Back">
         <span aria-hidden="true">‹</span>
       </button>
-
-      <div id="rcg-pane-meta" class="rcg-pane-meta"></div>
-
       <button class="rcg-btn" id="rcg-next">Next</button>
     </div>
   </div>
