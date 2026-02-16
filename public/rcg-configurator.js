@@ -218,7 +218,7 @@
         background:#fff;
         position: relative;
         overflow: hidden;
-        padding-bottom: calc(var(--rcg-sheet-h, 0px) * 0.40);
+        padding-bottom: calc(var(--rcg-sheet-h, 0px) * 0.30);
       }
       .rcg-stage{
         width:100%;
