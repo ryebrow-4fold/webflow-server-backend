@@ -183,6 +183,13 @@ const STEP_INSTRUCTIONS = {
         display: none;
         padding: 0;
       }
+        .rcg-modal[aria-hidden="false"]{
+  overscroll-behavior: contain;
+  touch-action: none;
+}
+.rcg-window{
+  overscroll-behavior: contain;
+}
       .rcg-modal[aria-hidden="false"]{ display:flex; }
       .rcg-window {
         background: #fff;
@@ -324,32 +331,58 @@ const STEP_INSTRUCTIONS = {
   .rcg-inline-host{ display:none; }
   .rcg-launch-wrap{ display:flex; } /* constant on mobile */
 
-  /* topbar stepper bigger */
+  /* Make modal content truly “screen-locked” */
+  .rcg-window{ height:100dvh; }
+  .rcg-modal-body{ height: calc(100dvh - 64px); overflow:hidden; } /* 64px ≈ topbar */
+  .rcg-app, .rcg-body{ height:100%; min-height:0; overflow:hidden; }
+
+  /* IMPORTANT: remove the desktop min-height that causes extra scroll */
+  .rcg-body{ border-left:0; border-right:0; border-bottom:0; }
+
+  /* Reduce the white padding under the SVG preview */
+  .rcg-preview{
+    padding-bottom: 0 !important;
+  }
+
+  /* Topbar stepper bigger */
   .rcg-topbar .meta{
     font-size: 14px;
     font-weight: 800;
   }
 
-  /* big logo */
+  /* Big logo */
   .rcg-logo{
     width: 52px;
     height: 52px;
   }
 
-  /* remove stepper inside pane (keep instruction only) */
-  .rcg-panel-handle .step{ display:none; }
+  /* ✅ SHOW step labels (remove the rule that hid them) */
+  .rcg-panel-handle .step{
+    display:flex;
+    flex-direction:column;
+    gap:2px;
+  }
+  .rcg-panel-handle .step small{
+    display:block;
+    max-width: 210px;
+  }
 
+  /* Pane: make it occupy about half the screen, and remove bottom “gap” */
   .rcg-panel{
     position:absolute;
     left:0; right:0; bottom:0;
-    max-height: 52dvh;
+
+    /* Taller pane */
+    height: 56dvh;          /* <-- adjust 52–62 to taste */
+    max-height: 62dvh;
+
     overflow:auto;
     border-top:2px solid #ddd;
-    padding-bottom: calc(24px + env(safe-area-inset-bottom) + 25px);
-  }
 
-  .rcg-window{ height:100dvh; }
-} 
+    /* Keep only safe-area padding (avoid huge extra padding) */
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+  }
+}
     </style>
 
     <div class="rcg-root">
@@ -951,7 +984,10 @@ if (visibleInstr) visibleInstr.textContent = STEP_INSTRUCTIONS[state.step] || ''
 
     el('#rcg-stepper', appRoot).textContent = `Step ${state.step}/4`;
     const top = el('#rcg-stepper-top', mount);
-    if (top) top.textContent = `Step ${state.step}/4`;
+if (top) {
+  const label = STEP_LABELS[state.step] ? ` — ${STEP_LABELS[state.step]}` : '';
+  top.textContent = `Step ${state.step}/4${label}`;
+}
     const stepSmall = el('#rcg-step-title', appRoot);
     if (stepSmall) stepSmall.textContent = STEP_LABELS[state.step] || '';
 
