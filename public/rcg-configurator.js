@@ -148,6 +148,17 @@ const STEP_INSTRUCTIONS = {
 
       .rcg-inline-host{ width:100%; position:relative; }
 
+#rcg-back{
+  display: inline-flex !important;
+  align-items:center;
+  justify-content:center;
+  height: 44px;
+}
+#rcg-back span{
+  font-size: 22px;
+  line-height: 1;
+}
+
       /* Mobile launch button constant on mobile */
       .rcg-launch-wrap{
         width:100%;
@@ -227,6 +238,16 @@ const STEP_INSTRUCTIONS = {
         cursor:pointer;
         font-weight:800;
       }
+        .rcg-close.rcg-close-x{
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size: 18px;
+  font-weight: 900;
+}
 
       .rcg-app{ width:100%; position: relative; }
       .rcg-body{
@@ -318,6 +339,9 @@ const STEP_INSTRUCTIONS = {
         .rcg-modal { display:none !important; }
         .rcg-launch-wrap{ display:none !important; }
         .rcg-body{ min-height: 740px; }
+        .rcg-preview{
+        flex: 0 0 auto;
+        height: clamp(340px, 48vh, 520px); }
         .rcg-panel{
           position:absolute;
           right:16px; top:16px;
@@ -326,6 +350,38 @@ const STEP_INSTRUCTIONS = {
           z-index: 50;
         }
       }
+
+      /* Desktop: show pane meta near buttons, hide left label */
+@media (min-width: 981px){
+  #rcg-pane-label{ display:none; }
+  .rcg-pane-meta{
+    font-weight: 900;
+    font-size: 13px;
+    color:#111;
+    white-space: nowrap;
+    margin: 0 6px;
+  }
+}
+
+/* Mobile: show left label, hide meta near buttons */
+@media (max-width: 980px){
+  #rcg-pane-meta{ display:none; }
+  #rcg-pane-label{
+    font-weight: 900;
+    font-size: 14px;
+    line-height: 1.15;
+    color:#111;
+    max-width: 52vw;
+    white-space: normal;
+  }
+
+  /* Modal header centered step count already handled by text, this centers it visually */
+  .rcg-topbar .meta{
+    flex: 1;
+    text-align: center;
+  }
+  .rcg-topbar .left{ min-width: 52px; } /* keeps logo area stable */
+}
 
       @media (max-width: 980px){
   .rcg-inline-host{ display:none; }
@@ -427,7 +483,7 @@ const STEP_INSTRUCTIONS = {
               <div style="position:absolute;left:-9999px;">Rock Creek Granite</div>
               <div class="meta" id="rcg-stepper-top">Step 1/4</div>
             </div>
-            <button class="rcg-close" id="rcg-close">Close</button>
+            <button class="rcg-close rcg-close-x" id="rcg-close" aria-label="Close">✕</button>
           </div>
           <div class="rcg-modal-body" id="rcg-modal-body"></div>
         </div>
@@ -448,18 +504,21 @@ const STEP_INSTRUCTIONS = {
 
           <aside class="rcg-panel" id="rcg-panel">
             <div class="rcg-panel-handle" id="rcg-panel-handle" title="Drag to move (desktop)">
-               <div class="step">
-  <span id="rcg-pane-instruction"></span>
+               <div class="rcg-panel-handle" id="rcg-panel-handle" title="Drag to move (desktop)">
+  <div class="step">
+    <span id="rcg-pane-label"></span>
+  </div>
+
+  <div style="display:flex; gap:8px; align-items:center">
+    <button class="rcg-btn outline rcg-icon-btn" id="rcg-back" aria-label="Back" title="Back">
+      <span aria-hidden="true">‹</span>
+    </button>
+
+    <div id="rcg-pane-meta" class="rcg-pane-meta"></div>
+
+    <button class="rcg-btn" id="rcg-next">Next</button>
+  </div>
 </div>
-              <div style="display:flex; gap:8px; align-items:center">
-              <!-- Back icon (outline style like Email DXF) -->
-              <button class="rcg-btn outline rcg-icon-btn" id="rcg-back" aria-label="Back" title="Back">
-              <span aria-hidden="true">‹</span>
-              </button>
-              
-              <button class="rcg-btn" id="rcg-next">Next</button>
-              </div>
-            </div>
 
             <div id="rcg-step1" class="rcg-step">
               <div class="rcg-title" id="rcg-instr-1"></div>
@@ -782,7 +841,9 @@ const STEP_INSTRUCTIONS = {
 
     if (state.shape === 'rectangle') {
       const ex = bbox.x, ey = bbox.y, ew = bbox.width, eh = bbox.height;
-      const band = Math.max(18, Math.min(36, Math.min(ew, eh) * 0.14));
+      const band = isMobile()
+  ? Math.max(34, Math.min(62, Math.min(ew, eh) * 0.20))
+  : Math.max(18, Math.min(36, Math.min(ew, eh) * 0.14));
 
       function drawEdge(x1, y1, x2, y2, key) {
         const active = state.edges.includes(key);
@@ -810,7 +871,7 @@ const STEP_INSTRUCTIONS = {
           const r = document.createElementNS(ns, 'rect');
           r.setAttribute('x', z.x); r.setAttribute('y', z.y);
           r.setAttribute('width', z.w); r.setAttribute('height', z.h);
-          r.setAttribute('fill', 'transparent');
+          r.setAttribute('fill', 'rgba(0,0,0,0.001)');
           r.setAttribute('pointer-events', 'all');
           r.style.cursor = 'pointer';
           r.addEventListener('click', () => {
@@ -1004,20 +1065,22 @@ const STEP_INSTRUCTIONS = {
   function goto(step) {
     state.step = clamp(step, 1, visibleStepCount());
     els('.rcg-step', appRoot).forEach((s, i) => s.classList.toggle('rcg-hidden', i !== state.step - 1));
-    // Put the instruction inside the visible step header
+    // Instruction in the step body (below the pane header)
 const visibleInstr = el(`#rcg-instr-${state.step}`, appRoot);
 if (visibleInstr) visibleInstr.textContent = STEP_INSTRUCTIONS[state.step] || '';
-const paneInstr = el('#rcg-pane-instruction', appRoot);
-if (paneInstr) paneInstr.textContent = STEP_INSTRUCTIONS[state.step] || '';
 
-    el('#rcg-stepper', appRoot).textContent = `Step ${state.step}/4`;
-    const top = el('#rcg-stepper-top', mount);
-if (top) {
-  const label = STEP_LABELS[state.step] || '';
-  top.textContent = `${state.step}/4 - ${label}`;
-}
-    const stepSmall = el('#rcg-step-title', appRoot);
-    if (stepSmall) stepSmall.textContent = STEP_LABELS[state.step] || '';
+// Topbar: mobile should show ONLY X/4
+const top = el('#rcg-stepper-top', mount);
+if (top) top.textContent = `${state.step}/4`;
+
+// Pane header:
+// - Mobile: show Step Label on left
+// - Desktop: show "X/4 — Step Label" near buttons
+const paneLabel = el('#rcg-pane-label', appRoot);
+if (paneLabel) paneLabel.textContent = STEP_LABELS[state.step] || '';
+
+const paneMeta = el('#rcg-pane-meta', appRoot);
+if (paneMeta) paneMeta.textContent = `${state.step}/4 — ${STEP_LABELS[state.step] || ''}`;
 
     drawShape();
     updateNav();
@@ -1028,20 +1091,20 @@ if (top) {
   function updateNav() {
   const back = el('#rcg-back', appRoot);
   const next = el('#rcg-next', appRoot);
-
   if (!back || !next) return;
 
   back.style.visibility = state.step === 1 ? 'hidden' : 'visible';
+
+  // Button label
   next.textContent = (state.step === 4) ? 'Checkout' : 'Next';
 
+  // Disable rules
   let disableNext = false;
 
-  // Step 2 rule: if selecting polished edges, require at least one edge
   if (state.step === 2 && state.shape === 'rectangle') {
     disableNext = (state.polishMode === 'select' && state.edges.length === 0);
   }
 
-  // Step 4 rule: require valid ZIP
   if (state.step === 4) {
     const zip = (el('#rcg-zip', appRoot)?.value || '').trim();
     disableNext = !/^\d{5}$/.test(zip);
@@ -1054,7 +1117,7 @@ const nextBtn = el('#rcg-next', appRoot);
 const backBtn = el('#rcg-back', appRoot);
 
 if (backBtn) backBtn.addEventListener('click', () => goto(state.step - 1));
-
+if (nextBtn.disabled) return;
 if (nextBtn) nextBtn.addEventListener('click', async () => {
   if (state.step === 4) {
     const zip = (el('#rcg-zip', appRoot)?.value || '').trim();
