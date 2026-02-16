@@ -166,6 +166,16 @@ const STEP_INSTRUCTIONS = {
         font-size: 16px;
       }
 
+      .rcg-icon-btn{
+      width:44px;
+      padding:10px 0;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      font-size:22px;
+      line-height:1;
+      }
+
       .rcg-modal {
         position: fixed; inset: 0;
         z-index: 999999;
@@ -223,11 +233,12 @@ const STEP_INSTRUCTIONS = {
       }
       .rcg-preview{
         flex: 1;
+        aspect-ratio: 7 / 3;
         min-height: 0;
         background:#fff;
         position: relative;
         overflow: hidden;
-        padding-bottom: calc(var(--rcg-sheet-h, 0px) * 0.30);
+        padding-bottom: calc(var(--rcg-sheet-h, 0px) * 0.22);
       }
       .rcg-stage{
         width:100%;
@@ -307,22 +318,36 @@ const STEP_INSTRUCTIONS = {
       }
 
       @media (max-width: 980px){
-      .rcg-stepper-top{ display:none !important; }  
+      .rcg-stepper-top{ display:none !important; }
+      .rcg-topbar .meta{
+      font-size: 14px;
+      font-wight: 800;}
+      .rcg-panel-handle .step{ display:none; }
+      .rcg-logo{
+      width: 52px
+      height: 52px;
+      }
+      }  
       .rcg-inline-host{ display:none; }
         .rcg-launch-wrap{ display:flex; } /* constant */
         .rcg-panel{
-          position: absolute;
-          left: 0; right: 0; bottom: 0;
-          max-height: 70vh;
-          overflow: auto;
-          border-top: 2px solid #ddd;
-
-          /* +25px and safe area for toolbar overlap */
-          padding-bottom: calc(30px + 70px + env(safe-area-inset-bottom, 0px));
+        position: absolute;
+        left: 0; right: 0; bottom: 0;
+        
+        /* Taller and consistent: */
+        max-height: 52dvh;
+        
+        overflow: auto;
+        border-top: 2px solid #ddd;
+        
+        /* Big safety padding for Chrome toolbar + safe area */
+        padding-bottom: calc(24px + env(safe-area-inset-bottom) + 25px);
         }
-        .rcg-panel-handle{ position: sticky; top: 0; z-index: 5; }
-        .rcg-title{ font-size: 20px; }
-      }
+        
+        .rcg-window{
+        height: 100dvh;
+        }
+     }
     </style>
 
     <div class="rcg-root">
@@ -365,9 +390,13 @@ const STEP_INSTRUCTIONS = {
                 <span id="rcg-stepper">Step 1/4</span>
                 <div class="rcg-title" id="rcg-step-instruction"></div>
               </div>
-              <div style="display:flex; gap:8px">
-                <button class="rcg-btn outline" id="rcg-back">Back</button>
-                <button class="rcg-btn" id="rcg-next">Next</button>
+              <div style="display:flex; gap:8px; align-items:center">
+              <!-- Back icon (outline style like Email DXF) -->
+              <button class="rcg-btn outline rcg-icon-btn" id="rcg-back" aria-label="Back" title="Back">
+              <span aria-hidden="true">‹</span>
+              </button>
+              
+              <button class="rcg-btn" id="rcg-next">Next</button>
               </div>
             </div>
 
@@ -414,28 +443,27 @@ const STEP_INSTRUCTIONS = {
             </div>
 
             <div id="rcg-step4" class="rcg-step rcg-hidden">
-              <div class="rcg-title" id="rcg-step-instruction"></div>
-
-              <div class="rcg-row" style="margin-bottom:10px; width:100%">
-                <label class="rcg-label">Stone</label>
-                <select class="rcg-input" id="rcg-color" style="flex:1; min-width:220px">
-                  ${COLORS.map(c => `<option value="${c.key}">${c.name}</option>`).join('')}
-                </select>
-              </div>
-
-              <div class="rcg-row" style="margin-top:8px">
-                <label class="rcg-label">ZIP</label>
-                <input class="rcg-input" id="rcg-zip" placeholder="ZIP code" maxlength="5" inputmode="numeric" pattern="\\d{5}">
-                <button class="rcg-btn" id="rcg-checkout">Checkout</button>
-              </div>
-
-              <div class="rcg-row" style="margin-top:6px">
-                <input class="rcg-input" id="rcg-email" style="flex:1; min-width:220px" placeholder="Email (optional) — Send me the DXF" type="email">
-                <button class="rcg-btn outline" id="rcg-email-dxf" title="Email DXF cut sheet">Email DXF</button>
-              </div>
-
-              <div class="rcg-sub">Checkout continues to Stripe. DXF email uses your existing /api/email-dxf endpoint.</div>
-            </div>
+            <div class="rcg-title" id="rcg-step-instruction"></div>
+            
+            <!-- Desktop: stone + ZIP same row; Mobile will wrap naturally -->
+            <div class="rcg-row" style="margin-bottom:10px; width:100%">
+            <label class="rcg-label">Stone</label>
+            <select class="rcg-input" id="rcg-color" style="flex:1; min-width:220px">
+            ${COLORS.map(c => `<option value="${c.key}">${c.name}</option>`).join('')}
+            </select>
+            
+            <label class="rcg-label">ZIP</label>
+            <input class="rcg-input" id="rcg-zip" placeholder="ZIP code" maxlength="5"
+           inputmode="numeric" pattern="\\d{5}" style="width:120px">
+           </div>
+           
+           <!-- Keep Email DXF button if you want; remove the email field -->
+           <div class="rcg-row" style="margin-top:6px">
+           <button class="rcg-btn outline" id="rcg-email-dxf" title="Email DXF cut sheet">Email DXF</button>
+           </div>
+           
+           <div class="rcg-sub">Ensure ZIP is your delivery location, to be priced upon checkout. </div>
+           </div>
           </aside>
         </div>
       </div>
@@ -922,25 +950,36 @@ if (instr) instr.textContent = STEP_INSTRUCTIONS[state.step] || '';
   }
 
   function updateNav() {
-    const back = el('#rcg-back', appRoot);
-    const next = el('#rcg-next', appRoot);
+  const back = el('#rcg-back', appRoot);
+  const next = el('#rcg-next', appRoot);
 
-    back.style.visibility = state.step === 1 ? 'hidden' : 'visible';
-    next.style.display = state.step === 4 ? 'none' : 'inline-block';
+  // Back visibility
+  back.style.visibility = state.step === 1 ? 'hidden' : 'visible';
 
-    let disableNext = false;
-    if (state.step === 2 && state.shape === 'rectangle') {
-      disableNext = (state.polishMode === 'select' && state.edges.length === 0);
-    }
-    next.disabled = disableNext;
+  // Next always visible now (becomes Checkout on step 4)
+  next.style.display = 'inline-flex';
+
+  // Label changes
+  next.textContent = (state.step === 4) ? 'Checkout' : 'Next';
+
+  // Disable rules
+  let disableNext = false;
+
+  if (state.step === 2 && state.shape === 'rectangle') {
+    disableNext = (state.polishMode === 'select' && state.edges.length === 0);
   }
 
-  el('#rcg-back', appRoot).onclick = () => goto(state.step - 1);
-  el('#rcg-next', appRoot).onclick = () => {
-    if (state.step === 1) { if (state.shape === 'rectangle') goto(2); else goto(4); return; }
-    if (state.step === 2) { goto(3); return; }
-    if (state.step === 3) { goto(4); return; }
-  };
+  if (state.step === 4) {
+    const zip = (el('#rcg-zip', appRoot)?.value || '').trim();
+    const zipInput = () => el('#rcg-zip', appRoot);
+    appRoot.addEventListener('input', (e) => {
+        if (e.target === zipInput()) updateNav();
+});
+    disableNext = !/^\d{5}$/.test(zip);
+  }
+
+  next.disabled = disableNext;
+}
 
   els('input[name="rcg-polish"]', appRoot).forEach(r => r.addEventListener('change', () => {
     state.polishMode = r.value;
@@ -1256,13 +1295,6 @@ pos = {
       mult: p.ship.mult
     };
   }
-
-  el('#rcg-checkout', appRoot).onclick = () => {
-    const zip = (el('#rcg-zip', appRoot).value || '').trim();
-    if (!/^\d{5}$/.test(zip)) return alert('Enter a valid 5-digit ZIP to continue.');
-    const payload = currentConfig();
-    window.location.assign('/config-checkout?cfg=' + encodeCfg(payload));
-  };
 
   // -----------------------------
   // DXF Builder
