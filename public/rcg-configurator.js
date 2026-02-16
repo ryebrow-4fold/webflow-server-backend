@@ -53,11 +53,11 @@
   ];
 
   const SECTION_TITLES = {
-    1: 'Define your shape',
-    2: 'Choose Polished Sides',
-    3: 'Add Sinks & Faucet Holes',
-    4: 'Select Stone & Ship'
-  };
+  1: 'Select your starting geometry',
+  2: 'Select edges to be flat polished',
+  3: 'Include and position sinks',
+  4: 'Preview your stone color'
+};
 
   const COLORS = [
     { key: "laurent", name: "Laurent", url: "https://assetstools.cosentino.com/api/v1/bynder/color/PTL/detalle/PTL-thumb.jpg?w=988&h=868&q=80,format&fit=crop&auto=format" },
@@ -187,7 +187,7 @@
       .rcg-topbar .left{ display:flex; align-items:center; gap:10px; min-width: 0; }
       .rcg-topbar .meta{ font-size:12px; color:#555; white-space:nowrap; }
       .rcg-logo{
-        width: 28px; height: 28px;
+        width: 44px; height: 44px;
         object-fit: contain;
         display:none;
       }
@@ -298,7 +298,8 @@
       }
 
       @media (max-width: 980px){
-        .rcg-inline-host{ display:none; }
+      .rcg-stepper-top{ display:none !important; }  
+      .rcg-inline-host{ display:none; }
         .rcg-launch-wrap{ display:flex; } /* constant */
         .rcg-panel{
           position: absolute;
@@ -308,7 +309,7 @@
           border-top: 2px solid #ddd;
 
           /* +25px and safe area for toolbar overlap */
-          padding-bottom: calc(18px + 68px + env(safe-area-inset-bottom, 0px));
+          padding-bottom: calc(26px + 68px + env(safe-area-inset-bottom, 0px));
         }
         .rcg-panel-handle{ position: sticky; top: 0; z-index: 5; }
         .rcg-title{ font-size: 20px; }
@@ -1123,12 +1124,22 @@
     });
 
     els('[data-faucet]', sinkPills).forEach(sel => sel.onchange = () => {
-      const id = sel.getAttribute('data-faucet');
-      const s = state.sinks.find(x => x.id === id); if (!s) return;
-      s.faucet = sel.value;
-      if (s.faucet === '1') s.spread = null;
-      refreshSinkPills(); drawShape();
-    });
+  const id = sel.getAttribute('data-faucet');
+  const s = state.sinks.find(x => x.id === id);
+  if (!s) return;
+
+  s.faucet = sel.value;
+
+  if (s.faucet === '1') {
+    s.spread = null;
+  } else if (s.faucet === '3') {
+    // default immediately to 4" so preview shows 3 holes right away
+    s.spread = 4;
+  }
+
+  refreshSinkPills();
+  drawShape();
+});
 
     els('[data-spread]', sinkPills).forEach(sel => sel.onchange = () => {
       const id = sel.getAttribute('data-spread');
@@ -1151,10 +1162,16 @@
     let pos;
 
     if (state.sinks.length === 0) {
-      pos = {
-        x: clamp(L * 0.5, MIN_SINK_EDGE + tpl.w / 2, L - MIN_SINK_EDGE - tpl.w / 2),
-        y: clamp(W * 0.35, MIN_SINK_EDGE + tpl.h / 2, W - MIN_SINK_EDGE - tpl.h / 2)
-      };
+      const xMin = MIN_SINK_EDGE + (tpl.w / 2);
+      const xMax = L - MIN_SINK_EDGE - (tpl.w / 2);
+      const yMin = MIN_SINK_EDGE + (tpl.h / 2);
+      const yMax = W - MIN_SINK_EDGE - (tpl.h / 2);
+      
+      // centered left/right, as close to bottom as allowed (4" edge + half sink height)
+pos = {
+  x: clamp(L / 2, xMin, xMax),
+  y: clamp(yMax, yMin, yMax)
+};
     } else {
       const suggested = suggestSecondPosition(tpl);
       if (!suggested) return alert('There is not enough room to add a second sink with required clearances.');
