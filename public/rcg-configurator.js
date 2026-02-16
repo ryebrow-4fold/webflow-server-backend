@@ -339,9 +339,19 @@ const STEP_INSTRUCTIONS = {
   /* IMPORTANT: remove the desktop min-height that causes extra scroll */
   .rcg-body{ border-left:0; border-right:0; border-bottom:0; }
 
-  /* Reduce the white padding under the SVG preview */
+  /* Reserve space equal to pane height so SVG/labels aren’t under the pane */
   .rcg-preview{
-    padding-bottom: 0 !important;
+    padding-bottom: calc(var(--rcg-sheet-h, 0px) + 10px) !important;
+  }
+
+  /* Pane header = instruction only */
+  #rcg-pane-instruction{
+    font-weight: 900;
+    font-size: 14px;
+    line-height: 1.15;
+    color: #111;
+    max-width: 52vw;
+    white-space: normal;
   }
 
   /* Topbar stepper bigger */
@@ -356,15 +366,34 @@ const STEP_INSTRUCTIONS = {
     height: 52px;
   }
 
-  /* ✅ SHOW step labels (remove the rule that hid them) */
+  /* Pane handle: show instruction text (don’t hide the step block on mobile) */
   .rcg-panel-handle .step{
     display:flex;
     flex-direction:column;
     gap:2px;
+    min-width: 0;
   }
-  .rcg-panel-handle .step small{
-    display:block;
-    max-width: 210px;
+
+  /* Step 4: keep stone + zip on one line */
+  #rcg-stone-zip-row{
+    flex-wrap: nowrap !important;
+    gap: 8px !important;
+  }
+
+  #rcg-stone-zip-row label{
+    white-space: nowrap;
+  }
+
+  /* shrink dropdown + zip */
+  #rcg-color{
+    min-width: 160px !important;   /* try 150 if needed */
+    width: auto !important;
+    flex: 1 1 auto !important;
+  }
+
+  #rcg-zip{
+    width: 92px !important;        /* try 88–104 */
+    flex: 0 0 auto !important;
   }
 
   /* Pane: make it occupy about half the screen, and remove bottom “gap” */
@@ -372,14 +401,12 @@ const STEP_INSTRUCTIONS = {
     position:absolute;
     left:0; right:0; bottom:0;
 
-    /* Taller pane */
-    height: 56dvh;          /* <-- adjust 52–62 to taste */
+    height: 56dvh;          /* adjust 52–62 to taste */
     max-height: 62dvh;
 
     overflow:auto;
     border-top:2px solid #ddd;
 
-    /* Keep only safe-area padding (avoid huge extra padding) */
     padding-bottom: calc(12px + env(safe-area-inset-bottom));
   }
 }
@@ -416,14 +443,13 @@ const STEP_INSTRUCTIONS = {
       <div class="rcg-app" id="rcg-app">
         <div class="rcg-body">
           <div class="rcg-preview">
-            <svg id="rcg-svg" class="rcg-stage" viewBox="0 0 1400 600" preserveAspectRatio="xMidYMid meet"></svg>
+            <svg id="rcg-svg" class="rcg-stage" viewBox="0 0 1400 600" preserveAspectRatio="xMidYMin meet"></svg>
           </div>
 
           <aside class="rcg-panel" id="rcg-panel">
             <div class="rcg-panel-handle" id="rcg-panel-handle" title="Drag to move (desktop)">
-                <div class="step">
-  <span id="rcg-stepper">Step 1/4</span>
-  <small id="rcg-step-title"></small>
+               <div class="step">
+  <span id="rcg-pane-instruction"></span>
 </div>
               <div style="display:flex; gap:8px; align-items:center">
               <!-- Back icon (outline style like Email DXF) -->
@@ -481,7 +507,7 @@ const STEP_INSTRUCTIONS = {
             <div class="rcg-title" id="rcg-instr-4"></div>
             
             <!-- Desktop: stone + ZIP same row; Mobile will wrap naturally -->
-            <div class="rcg-row" style="margin-bottom:10px; width:100%">
+            <div class="rcg-row" id="rcg-stone-zip-row" style="margin-bottom:10px; width:100%">
             <label class="rcg-label">Stone</label>
             <select class="rcg-input" id="rcg-color" style="flex:1; min-width:220px">
             ${COLORS.map(c => `<option value="${c.key}">${c.name}</option>`).join('')}
@@ -981,12 +1007,14 @@ const STEP_INSTRUCTIONS = {
     // Put the instruction inside the visible step header
 const visibleInstr = el(`#rcg-instr-${state.step}`, appRoot);
 if (visibleInstr) visibleInstr.textContent = STEP_INSTRUCTIONS[state.step] || '';
+const paneInstr = el('#rcg-pane-instruction', appRoot);
+if (paneInstr) paneInstr.textContent = STEP_INSTRUCTIONS[state.step] || '';
 
     el('#rcg-stepper', appRoot).textContent = `Step ${state.step}/4`;
     const top = el('#rcg-stepper-top', mount);
 if (top) {
-  const label = STEP_LABELS[state.step] ? ` — ${STEP_LABELS[state.step]}` : '';
-  top.textContent = `Step ${state.step}/4${label}`;
+  const label = STEP_LABELS[state.step] || '';
+  top.textContent = `${state.step}/4 - ${label}`;
 }
     const stepSmall = el('#rcg-step-title', appRoot);
     if (stepSmall) stepSmall.textContent = STEP_LABELS[state.step] || '';
