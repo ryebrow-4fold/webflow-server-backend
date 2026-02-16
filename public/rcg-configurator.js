@@ -503,22 +503,21 @@ const STEP_INSTRUCTIONS = {
           </div>
 
           <aside class="rcg-panel" id="rcg-panel">
-            <div class="rcg-panel-handle" id="rcg-panel-handle" title="Drag to move (desktop)">
-               <div class="rcg-panel-handle" id="rcg-panel-handle" title="Drag to move (desktop)">
-  <div class="step">
-    <span id="rcg-pane-label"></span>
+  <div class="rcg-panel-handle" id="rcg-panel-handle" title="Drag to move (desktop)">
+    <div class="step">
+      <span id="rcg-pane-label"></span>
+    </div>
+
+    <div style="display:flex; gap:8px; align-items:center">
+      <button class="rcg-btn outline rcg-icon-btn" id="rcg-back" aria-label="Back" title="Back">
+        <span aria-hidden="true">‹</span>
+      </button>
+
+      <div id="rcg-pane-meta" class="rcg-pane-meta"></div>
+
+      <button class="rcg-btn" id="rcg-next">Next</button>
+    </div>
   </div>
-
-  <div style="display:flex; gap:8px; align-items:center">
-    <button class="rcg-btn outline rcg-icon-btn" id="rcg-back" aria-label="Back" title="Back">
-      <span aria-hidden="true">‹</span>
-    </button>
-
-    <div id="rcg-pane-meta" class="rcg-pane-meta"></div>
-
-    <button class="rcg-btn" id="rcg-next">Next</button>
-  </div>
-</div>
 
             <div id="rcg-step1" class="rcg-step">
               <div class="rcg-title" id="rcg-instr-1"></div>
@@ -1117,23 +1116,20 @@ const nextBtn = el('#rcg-next', appRoot);
 const backBtn = el('#rcg-back', appRoot);
 
 if (backBtn) backBtn.addEventListener('click', () => goto(state.step - 1));
-if (nextBtn.disabled) return;
+
 if (nextBtn) nextBtn.addEventListener('click', async () => {
+  if (nextBtn.disabled) return;   // <-- put it here, inside the handler
+
   if (state.step === 4) {
     const zip = (el('#rcg-zip', appRoot)?.value || '').trim();
     if (!/^\d{5}$/.test(zip)) return;
 
     const payload = currentConfig();
-
-    // email DXF internally (does not show UI)
     await emailDXFToOrders();
-
-    // redirect to checkout
     window.location.assign('/config-checkout?cfg=' + encodeCfg(payload));
     return;
   }
 
-  // normal progression
   if (state.step === 1) {
     goto(state.shape === 'rectangle' ? 2 : 4);
     return;
