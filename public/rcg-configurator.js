@@ -303,12 +303,12 @@
         .rcg-panel{
           position: absolute;
           left: 0; right: 0; bottom: 0;
-          max-height: 58vh;
+          max-height: 66vh;
           overflow: auto;
           border-top: 2px solid #ddd;
 
           /* +25px and safe area for toolbar overlap */
-          padding-bottom: calc(18px + 44px + env(safe-area-inset-bottom, 0px));
+          padding-bottom: calc(18px + 55px + env(safe-area-inset-bottom, 0px));
         }
         .rcg-panel-handle{ position: sticky; top: 0; z-index: 5; }
         .rcg-title{ font-size: 20px; }
