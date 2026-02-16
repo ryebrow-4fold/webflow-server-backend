@@ -215,7 +215,7 @@ const STEP_INSTRUCTIONS = {
 @media (max-width: 980px){
   .rcg-topbar{
     display:grid;
-    grid-template-columns: 52px 1fr 52px; /* logo / centered text / close */
+    grid-template-columns: 64px 1fr 64px; /* logo / centered text / close */
     align-items:center;
   }
   .rcg-topbar .left{
@@ -247,7 +247,7 @@ const STEP_INSTRUCTIONS = {
       .rcg-topbar .left{ display:flex; align-items:center; gap:10px; min-width: 0; }
       .rcg-topbar .meta{ font-size:12px; color:#555; white-space:nowrap; }
       .rcg-logo{
-        width: 52px; height: 52px;
+        width: 64px; height: 64px;
         object-fit: contain;
         display:none;
       }
@@ -604,7 +604,6 @@ const STEP_INSTRUCTIONS = {
 
             <div id="rcg-step2" class="rcg-step rcg-hidden">
               <div class="rcg-title" id="rcg-instr-2"></div>
-              <div class="rcg-sub" style="font-weight:800;color:#000">Select edges to be flat polished</div>
               <div class="rcg-sub">Tap each edge in the preview. Yellow = polished. Unpolished sides can receive optional 4" backsplash.</div>
 
               <div class="rcg-row" id="rcg-polish-choice" style="margin:8px 0 4px 0">
