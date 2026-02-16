@@ -1,8 +1,8 @@
 /* =============================
-   RCG CONFIGURATOR (External JS) — SINGLE FILE
+   RCG CONFIGURATOR (External JS) — SINGLE FILE (CLEAN)
    - Mounts into: <div id="rcg-configurator-launch"></div>
    - Desktop: inline (no modal)
-   - Mobile: scroll-revealed launch button -> fullscreen modal
+   - Mobile: launch button (constant) -> fullscreen modal
    - Endpoints:
        - Checkout redirect: /config-checkout?cfg=...
        - Email DXF: POST /api/email-dxf
@@ -31,11 +31,11 @@
   // -----------------------------
   // Admin knobs
   // -----------------------------
-  const MAX_LEN = 72;         // Rect L (in)
-  const MAX_WID = 62;         // Rect W (in)
-  const MAX_DIAM = 62;        // Circle Ø & polygon circumdiameter cap
-  const MIN_SINK_EDGE = 4;    // min distance from piece edge (in)
-  const MIN_SINK_GAP = 4;     // min distance between sinks (in)
+  const MAX_LEN = 72;
+  const MAX_WID = 62;
+  const MAX_DIAM = 62;
+  const MIN_SINK_EDGE = 4;
+  const MIN_SINK_GAP = 4;
   const DOLLARS_PER_SQFT = 55;
   const SINK_PRICES = { 'bath-oval': 80, 'bath-rect': 95, 'kitchen-rect': 150 };
   const DEFAULT_COLOR = 'bergen';
@@ -59,7 +59,6 @@
     4: 'Select Stone & Ship'
   };
 
-  // Cosentino swatches
   const COLORS = [
     { key: "laurent", name: "Laurent", url: "https://assetstools.cosentino.com/api/v1/bynder/color/PTL/detalle/PTL-thumb.jpg?w=988&h=868&q=80,format&fit=crop&auto=format" },
     { key: "rem",     name: "Rem",     url: "https://assetstools.cosentino.com/api/v1/bynder/color/RKC/detalle/RKC-thumb.jpg?w=988&h=868&q=80,format&fit=crop&auto=format" },
@@ -120,11 +119,8 @@
     return { weight, cwt, mult, ltl: withPacking };
   }
 
-  // -----------------------------
-  // Render shell:
-  // - Desktop inline container
-  // - Mobile launch + modal container
-  // - Single app DOM moved between inline & modal
+    // -----------------------------
+  // Render shell
   // -----------------------------
   mount.innerHTML = `
     <style>
@@ -141,18 +137,14 @@
         border-radius: 0 !important;
       }
 
-      /* -------- Desktop inline container (always visible on desktop) -------- */
-      .rcg-inline-host{
-        width:100%;
-        position:relative;
-      }
+      .rcg-inline-host{ width:100%; position:relative; }
 
-      /* -------- Mobile launch button (hidden until scrolled to section) -------- */
+      /* Mobile launch button constant on mobile */
       .rcg-launch-wrap{
         width:100%;
-        display:none;
         justify-content:center;
         margin: 10px 0 0;
+        display:none;
       }
       .rcg-launch{
         background: var(--rcg-yellow);
@@ -164,9 +156,7 @@
         width: min(520px, 100%);
         font-size: 16px;
       }
-      .rcg-launch-wrap.rcg-visible{ display:flex; }
 
-      /* -------- Mobile modal overlay -------- */
       .rcg-modal {
         position: fixed; inset: 0;
         z-index: 999999;
@@ -184,7 +174,6 @@
         overflow: hidden;
       }
 
-      /* Mobile top bar (white) */
       .rcg-topbar{
         display:flex;
         align-items:center;
@@ -196,19 +185,7 @@
         gap:10px;
       }
       .rcg-topbar .left{ display:flex; align-items:center; gap:10px; min-width: 0; }
-      .rcg-topbar .title{
-        font-weight:800;
-        white-space:nowrap;
-        overflow:hidden;
-        text-overflow:ellipsis;
-        max-width: 55vw;
-        font-size: 14px;
-      }
-      .rcg-topbar .meta{
-        font-size:12px;
-        color: #555;
-        white-space:nowrap;
-      }
+      .rcg-topbar .meta{ font-size:12px; color:#555; white-space:nowrap; }
       .rcg-logo{
         width: 28px; height: 28px;
         object-fit: contain;
@@ -222,14 +199,10 @@
         color:#111;
         padding:6px 10px;
         cursor:pointer;
-        font-weight:700;
+        font-weight:800;
       }
 
-      /* App layout (shared for desktop + mobile) */
-      .rcg-app{
-        width:100%;
-        position: relative;
-      }
+      .rcg-app{ width:100%; position: relative; }
       .rcg-body{
         width:100%;
         display:flex;
@@ -245,15 +218,13 @@
         background:#fff;
         position: relative;
         overflow: hidden;
-        padding-bottom: calc(var(--rcg-sheet-h, 0px) * 0.55); /* mobile: reserve for bottom sheet */
-
-}
+        padding-bottom: calc(var(--rcg-sheet-h, 0px) * 0.55);
       }
       .rcg-stage{
         width:100%;
         height:100%;
         display:block;
-        touch-action: none;
+        touch-action: none; /* critical for smooth drag on mobile */
       }
 
       .rcg-panel{
@@ -261,8 +232,6 @@
         padding: 12px;
         line-height: 1.2;
       }
-
-      /* Panel header (drag handle on desktop) */
       .rcg-panel-handle{
         display:flex;
         align-items:center;
@@ -297,7 +266,6 @@
       .rcg-sub { color: var(--rcg-muted); font-size: 13px; margin: 6px 0; line-height:1.2; font-weight:500 }
       .rcg-row { display:flex; gap:10px; align-items:center; flex-wrap:wrap }
       .rcg-input { width:110px; padding:8px 10px; border:1px solid #cfcfcf; background:#fff; color:var(--rcg-black); font-weight:600 }
-      .rcg-input.invalid { color: var(--rcg-danger); border-color: var(--rcg-danger); }
       .rcg-label { font-weight:800; color: var(--rcg-black); }
       .rcg-hidden { display:none !important; }
 
@@ -316,14 +284,10 @@
       .sink-chip .rcg-input { width:96px }
       .sink-chip select[data-spread]{ width:64px }
 
-      /* Desktop floating panel */
       @media (min-width: 981px){
         .rcg-modal { display:none !important; }
         .rcg-launch-wrap{ display:none !important; }
-
-        .rcg-body{
-          min-height: 740px;
-        }
+        .rcg-body{ min-height: 740px; }
         .rcg-panel{
           position:absolute;
           right:16px; top:16px;
@@ -333,42 +297,37 @@
         }
       }
 
-      /* Mobile bottom sheet */
       @media (max-width: 980px){
         .rcg-inline-host{ display:none; }
+        .rcg-launch-wrap{ display:flex; } /* constant */
         .rcg-panel{
           position: absolute;
           left: 0; right: 0; bottom: 0;
-          max-height: 38vh;          /* less intrusive */
+          max-height: 38vh;
           overflow: auto;
           border-top: 2px solid #ddd;
-          padding-bottom: 18px;
+
+          /* +25px and safe area for toolbar overlap */
+          padding-bottom: calc(18px + 25px + env(safe-area-inset-bottom, 0px));
         }
-        .rcg-panel-handle{
-          position: sticky;
-          top: 0;
-          z-index: 5;
-        }
+        .rcg-panel-handle{ position: sticky; top: 0; z-index: 5; }
         .rcg-title{ font-size: 20px; }
       }
     </style>
 
     <div class="rcg-root">
-      <!-- Mobile: launch button -->
       <div class="rcg-launch-wrap" id="rcg-launch-wrap">
         <button class="rcg-launch" id="rcg-open">Start Your Project Order</button>
       </div>
 
-      <!-- Desktop: inline host -->
       <div class="rcg-inline-host" id="rcg-inline-host"></div>
 
-      <!-- Mobile: modal -->
       <div class="rcg-modal" id="rcg-modal" aria-hidden="true">
         <div class="rcg-window">
           <div class="rcg-topbar">
             <div class="left">
               <img class="rcg-logo ${LOGO_URL ? 'rcg-has':''}" ${LOGO_URL ? `src="${LOGO_URL}"` : ''} alt="">
-              <div class="title" style="position:absolute;left:-9999px;">Rock Creek Granite</div>
+              <div style="position:absolute;left:-9999px;">Rock Creek Granite</div>
               <div class="meta" id="rcg-stepper-top">Step 1/4</div>
             </div>
             <button class="rcg-close" id="rcg-close">Close</button>
@@ -379,7 +338,7 @@
     </div>
   `;
 
-  // -----------------------------
+    // -----------------------------
   // Build ONE app DOM (moved between inline & modal)
   // -----------------------------
   function appHTML() {
@@ -478,7 +437,6 @@
   const modalBody = el('#rcg-modal-body', mount);
   const openBtn = el('#rcg-open', mount);
   const closeBtn = el('#rcg-close', mount);
-  const launchWrap = el('#rcg-launch-wrap', mount);
 
   const appWrap = document.createElement('div');
   appWrap.innerHTML = appHTML();
@@ -496,9 +454,9 @@
     modal.setAttribute('aria-hidden', 'false');
     document.documentElement.style.overflow = 'hidden';
     document.body.style.overflow = 'hidden';
-    // mobile padding sync
     syncMobilePreviewInset();
   }
+
   function closeModal() {
     modal.setAttribute('aria-hidden', 'true');
     document.documentElement.style.overflow = '';
@@ -508,54 +466,15 @@
   // Desktop default: inline
   attachAppToDesktop();
 
-  // On resize: move app between containers
-  function syncMode() {
-    if (isDesktop()) {
-      closeModal();
-      attachAppToDesktop();
-      // Desktop drag handle should be active
-      setHandleMode();
-      // clear mobile padding
-      const preview = el('.rcg-preview', appRoot);
-      if (preview) preview.style.removeProperty('--rcg-sheet-h');
-    } else {
-      // mobile: keep inline hidden via CSS; app stays inline until opened
-      setHandleMode();
-    }
-  }
-  window.addEventListener('resize', syncMode);
-
-  // Mobile scroll reveal of button
-  (function setupScrollReveal() {
-    const applyVisibility = (show) => {
-      if (!launchWrap) return;
-      if (isDesktop()) {
-        launchWrap.classList.remove('rcg-visible');
-        return;
-      }
-      launchWrap.classList.toggle('rcg-visible', !!show);
-    };
-
-    // default hidden on mobile until in view
-    applyVisibility(false);
-
-    const obs = new IntersectionObserver((entries) => {
-      const e = entries[0];
-      applyVisibility(e && e.isIntersecting);
-    }, { root: null, threshold: 0.15 });
-
-    obs.observe(mount);
-
-    window.addEventListener('resize', () => applyVisibility(false));
-  })();
-
   // Buttons
   if (openBtn) openBtn.addEventListener('click', () => {
     if (!isMobile()) return;
     openModal();
   });
   if (closeBtn) closeBtn.addEventListener('click', closeModal);
-  modal.addEventListener('mousedown', (e) => { if (e.target === modal) closeModal(); });
+  if (modal) {
+    modal.addEventListener('mousedown', (e) => { if (e.target === modal) closeModal(); });
+  }
 
   // -----------------------------
   // State
@@ -566,7 +485,7 @@
     dims: {},
     sinks: [],
     color: DEFAULT_COLOR,
-    edges: [],         // ['top','right','bottom','left']
+    edges: [],
     area: 0,
     activeIcon: 'square',
     backsplash: false,
@@ -574,7 +493,7 @@
   };
 
   // -----------------------------
-  // Shape icons (EXACT SVG DATA retained)
+  // Shape icons
   // -----------------------------
   const ICONS = ['square', 'circle', 'polygon'];
   function isoIcon(name) {
@@ -591,6 +510,7 @@
     els('[data-icon]', container).forEach(btn => btn.onclick = () => setShapeFromIcon(btn.dataset.icon));
   }
 
+ 
   // -----------------------------
   // SVG Scene
   // -----------------------------
@@ -672,6 +592,26 @@
     dimsG.appendChild(t);
   }
 
+  // ---- sink drag global state for smooth mobile dragging ----
+  let activeSinkDrag = null;
+
+  function svgPoint(evt) {
+    const p = svg.createSVGPoint();
+    if (evt.touches && evt.touches[0]) {
+      p.x = evt.touches[0].clientX; p.y = evt.touches[0].clientY;
+    } else {
+      p.x = evt.clientX; p.y = evt.clientY;
+    }
+    return p.matrixTransform(svg.getScreenCTM().inverse());
+  }
+
+  function cancelSinkDrag() {
+    activeSinkDrag = null;
+  }
+
+  window.addEventListener('mouseup', cancelSinkDrag);
+  window.addEventListener('touchend', cancelSinkDrag);
+
   function drawShape() {
     imageG.innerHTML = ''; shapeG.innerHTML = ''; edgesG.innerHTML = '';
     dimsG.innerHTML = ''; sinksG.innerHTML = ''; hotG.innerHTML = '';
@@ -710,11 +650,9 @@
       return;
     }
 
-    // clip path
     clip.innerHTML = '';
     clip.appendChild(pathEl.cloneNode(true));
 
-    // texture on step 4+
     const showTexture = (state.step >= 4 && !!state.color);
     if (showTexture) {
       const col = COLORS.find(x => x.key === state.color);
@@ -729,17 +667,15 @@
       }
     }
 
-    // outline
     const outline = pathEl.cloneNode(true);
     outline.setAttribute('fill', showTexture ? 'none' : '#ffffff');
     outline.setAttribute('stroke', '#111');
     outline.setAttribute('stroke-width', '2');
     shapeG.appendChild(outline);
 
-    // edges + hot zones (rectangle only)
     if (state.shape === 'rectangle') {
       const ex = bbox.x, ey = bbox.y, ew = bbox.width, eh = bbox.height;
-      const band = Math.max(18, Math.min(36, Math.min(ew, eh) * 0.14)); // slightly easier to tap
+      const band = Math.max(18, Math.min(36, Math.min(ew, eh) * 0.14));
 
       function drawEdge(x1, y1, x2, y2, key) {
         const active = state.edges.includes(key);
@@ -781,7 +717,6 @@
       }
     }
 
-    // dimension labels
     if (state.shape === 'rectangle') {
       label(`${fmt2(state.dims.L || 0)}" (L)`, bbox.x + bbox.width / 2, Math.max(28, bbox.y - 20));
       label(`${fmt2(state.dims.W || 0)}" (W)`, Math.max(36, bbox.x - 40), bbox.y + bbox.height / 2);
@@ -791,7 +726,7 @@
       label(`${state.dims.n || 6}-sides, ${fmt2(state.dims.A || 0)}" side`, bbox.x + bbox.width / 2, Math.max(28, bbox.y - 20));
     }
 
-    // sinks (rectangle only)
+    // ---- SINKS + faucet preview (fixed) ----
     if (state.shape === 'rectangle' && state.sinks.length) {
       const toPx = v => v * s;
       const toIn = v => v / s;
@@ -801,68 +736,41 @@
         const tpl = SINK_TEMPLATES[snk.key]; if (!tpl) return;
         const halfW = tpl.w / 2, halfH = tpl.h / 2;
 
-        let cxIn = clamp(snk.x, halfW + MIN_SINK_EDGE, (state.dims.L - halfW) - MIN_SINK_EDGE);
-        let cyIn = clamp(snk.y, halfH + MIN_SINK_EDGE, (state.dims.W - halfH) - MIN_SINK_EDGE);
+        snk.x = clamp(snk.x, halfW + MIN_SINK_EDGE, (state.dims.L - halfW) - MIN_SINK_EDGE);
+        snk.y = clamp(snk.y, halfH + MIN_SINK_EDGE, (state.dims.W - halfH) - MIN_SINK_EDGE);
 
-        function violates(x, y) {
-          return state.sinks.some((o, j) => j !== idx && (() => {
-            const t = SINK_TEMPLATES[o.key];
-            const dx = Math.abs(x - o.x);
-            const dy = Math.abs(y - o.y);
-            const minDx = (tpl.w / 2 + t.w / 2 + MIN_SINK_GAP);
-            const minDy = (tpl.h / 2 + t.h / 2 + MIN_SINK_GAP);
-            return (dx < minDx && dy < minDy);
-          })());
-        }
-
-        if (violates(cxIn, cyIn)) { cxIn = snk.x; cyIn = snk.y; }
-        snk.x = cxIn; snk.y = cyIn;
-
-        const gx = rectX + toPx(cxIn - halfW);
-        const gy = rectY + toPx(cyIn - halfH);
-        const gw = toPx(tpl.w), gh = toPx(tpl.h);
+        const sinkLeft = rectX + toPx(snk.x - halfW);
+        const sinkTop  = rectY + toPx(snk.y - halfH);
+        const sinkWpx  = toPx(tpl.w);
+        const sinkHpx  = toPx(tpl.h);
 
         let node;
         if (tpl.shape === 'oval') {
           node = document.createElementNS(ns, 'ellipse');
-          node.setAttribute('cx', gx + gw / 2);
-          node.setAttribute('cy', gy + gh / 2);
-          node.setAttribute('rx', gw / 2);
-          node.setAttribute('ry', gh / 2);
+          node.setAttribute('cx', sinkLeft + sinkWpx / 2);
+          node.setAttribute('cy', sinkTop + sinkHpx / 2);
+          node.setAttribute('rx', sinkWpx / 2);
+          node.setAttribute('ry', sinkHpx / 2);
         } else {
           node = document.createElementNS(ns, 'rect');
-          node.setAttribute('x', gx); node.setAttribute('y', gy);
-          node.setAttribute('width', gw); node.setAttribute('height', gh);
+          node.setAttribute('x', sinkLeft);
+          node.setAttribute('y', sinkTop);
+          node.setAttribute('width', sinkWpx);
+          node.setAttribute('height', sinkHpx);
           node.setAttribute('rx', '4');
         }
         node.setAttribute('fill', 'rgba(255,255,255,0.001)');
         node.setAttribute('stroke', '#d00');
-        node.setAttribute('stroke-width', isMobile()? '3' : '2');
+        node.setAttribute('stroke-width', isMobile() ? '3' : '2');
         node.style.cursor = 'grab';
         sinksG.appendChild(node);
 
-        // faucet holes preview (1.25" Ø)
+        // Faucet holes preview (always computed from sink position)
         const holeR = toPx(1.25 / 2);
-        const holeY = (ny - (gh / 2)) - toPx(2);
-        const holesNow = [];
-        
-        if (snk.faucet === '3' && (snk.spread === 4 || snk.spread === 8)) {
-            const off = toPx((snk.spread / 2));
-            holesNow.push([nx - off, holeY], [nx, holeY], [nx + off, holeY]);
-        } else {
-            holesNow.push([nx, holeY]);
-        }
-        
-        const holeEls = Array.from(sinksG.querySelectorAll(`circle[data-sinkhole="${snk.id}"]`));
-        holeEls.forEach((c, i) => {
-            const pt = holesNow[i];
-            
-            if (!pt) { c.remove(); return; }
-            c.setAttribute('cx', pt[0]);
-            c.setAttribute('cy', pt[1]);
-            c.setAttribute('r', holeR);
-        });
+        const centerX = sinkLeft + sinkWpx / 2;
+        const holeY = sinkTop - toPx(2);
 
+        const holes = [];
         if (snk.faucet === '3' && (snk.spread === 4 || snk.spread === 8)) {
           const off = toPx((snk.spread / 2));
           holes.push([centerX - off, holeY], [centerX, holeY], [centerX + off, holeY]);
@@ -872,51 +780,69 @@
 
         holes.forEach(([hx, hy]) => {
           const c = document.createElementNS(ns, 'circle');
-          c.setAttribute('data-sinkhole', snk.id);
-          c.setAttribute('data-hole-idx', String(holeIdx));
           c.setAttribute('cx', hx);
           c.setAttribute('cy', hy);
           c.setAttribute('r', holeR);
           c.setAttribute('fill', 'rgba(255,255,255,0.6)');
           c.setAttribute('stroke', '#111');
-          c.setAttribute('stroke-width', isMobile()? '3' : '2');
+          c.setAttribute('stroke-width', isMobile() ? '3' : '2');
           sinksG.appendChild(c);
         });
 
-        // drag
-        let dragging = false, ox = 0, oy = 0;
-        let nodeCenterX = gx + gw / 2, nodeCenterY = gy + gh / 2;
+        // Drag behavior (smooth on mobile): do NOT redraw per move; update snk coords and redraw on RAF
+        node.addEventListener('mousedown', (e) => startSinkDrag(e, idx, tpl, bbox, s));
+        node.addEventListener('touchstart', (e) => startSinkDrag(e, idx, tpl, bbox, s), { passive: false });
+      });
 
-        function svgPoint(evt) {
-          const p = svg.createSVGPoint();
-          if (evt.touches && evt.touches[0]) {
-            p.x = evt.touches[0].clientX; p.y = evt.touches[0].clientY;
-          } else {
-            p.x = evt.clientX; p.y = evt.clientY;
-          }
-          return p.matrixTransform(svg.getScreenCTM().inverse());
-        }
+      function startSinkDrag(e, idx, tpl, bbox, s) {
+        if (state.step !== 3) return;
+        e.preventDefault();
 
-        function onDown(e) {
+        const rectX = bbox.x, rectY = bbox.y;
+        const toPx = v => v * s;
+        const toIn = v => v / s;
+
+        const gw = toPx(tpl.w), gh = toPx(tpl.h);
+
+        const pt = svgPoint(e);
+        const snk = state.sinks[idx];
+        const currentCx = rectX + toPx(snk.x);
+        const currentCy = rectY + toPx(snk.y);
+
+        const ox = pt.x - currentCx;
+        const oy = pt.y - currentCy;
+
+        activeSinkDrag = { idx, tpl, bbox, s, ox, oy, gw, gh };
+      }
+
+      // one move handler for the whole svg (smoother)
+      if (!svg.__rcg_sink_move_bound) {
+        svg.__rcg_sink_move_bound = true;
+
+        const onMove = (e) => {
+          if (!activeSinkDrag) return;
           if (state.step !== 3) return;
-          dragging = true;
-          node.style.cursor = 'grabbing';
-          const pt = svgPoint(e);
-          ox = pt.x - nodeCenterX;
-          oy = pt.y - nodeCenterY;
-          e.preventDefault();
-        }
-        function onMove(e) {
-          if (!dragging) return;
-          const pt = svgPoint(e);
 
-          let nx = clamp(
-            pt.x - ox,
+          e.preventDefault();
+
+          const { idx, tpl, bbox, s, ox, oy, gw, gh } = activeSinkDrag;
+
+          const toPx = v => v * s;
+          const toIn = v => v / s;
+
+          const rectX = bbox.x, rectY = bbox.y;
+
+          const pt = svgPoint(e);
+          let nx = pt.x - ox;
+          let ny = pt.y - oy;
+
+          nx = clamp(
+            nx,
             rectX + gw / 2 + toPx(MIN_SINK_EDGE),
             rectX + bbox.width - gw / 2 - toPx(MIN_SINK_EDGE)
           );
-          let ny = clamp(
-            pt.y - oy,
+          ny = clamp(
+            ny,
             rectY + gh / 2 + toPx(MIN_SINK_EDGE),
             rectY + bbox.height - gh / 2 - toPx(MIN_SINK_EDGE)
           );
@@ -924,6 +850,7 @@
           const xin = toIn(nx - rectX);
           const yin = toIn(ny - rectY);
 
+          // collision check
           let collide = false;
           state.sinks.forEach((o, j) => {
             if (j === idx) return;
@@ -934,37 +861,23 @@
             const minDy = (tpl.h / 2 + tt.h / 2 + MIN_SINK_GAP);
             if (dx < minDx && dy < minDy) collide = true;
           });
+          if (collide) return;
 
-          if (!collide) {
-  nodeCenterX = nx; nodeCenterY = ny;
-  snk.x = xin; snk.y = yin;
+          state.sinks[idx].x = xin;
+          state.sinks[idx].y = yin;
 
-  // Move the element live (smooth)
-  if (tpl.shape === 'oval') {
-    node.setAttribute('cx', nx);
-    node.setAttribute('cy', ny);
-  } else {
-    node.setAttribute('x', nx - (gw / 2));
-    node.setAttribute('y', ny - (gh / 2));
-  }
+          // redraw on next frame for fluid feel
+          if (!drawShape.__raf) {
+            drawShape.__raf = requestAnimationFrame(() => {
+              drawShape.__raf = null;
+              drawShape();
+            });
+          }
+        };
 
-  // Also move faucet hole preview circles (we can tag them for this)
-  // (See the small tag patch below.)
-}
-        }
-        function onUp() {
-          dragging = false;
-          node.style.cursor = 'grab';
-          drawShape();
-        }
-
-        node.addEventListener('mousedown', onDown);
-        node.addEventListener('touchstart', onDown, { passive: false });
-        window.addEventListener('mousemove', onMove);
-        window.addEventListener('touchmove', onMove, { passive: false });
-        window.addEventListener('mouseup', onUp);
-        window.addEventListener('touchend', onUp);
-      });
+        svg.addEventListener('mousemove', onMove);
+        svg.addEventListener('touchmove', onMove, { passive: false });
+      }
     }
   }
 
@@ -993,7 +906,6 @@
     drawShape();
     updateNav();
     updateStepHints();
-    // mobile inset updates (sheet changes per step)
     syncMobilePreviewInset();
   }
 
@@ -1018,20 +930,17 @@
     if (state.step === 3) { goto(4); return; }
   };
 
-  // polish radios
   els('input[name="rcg-polish"]', appRoot).forEach(r => r.addEventListener('change', () => {
     state.polishMode = r.value;
     if (state.polishMode === 'none') state.edges = [];
     drawShape(); updateNav();
   }));
 
-  // backsplash
   const backsplashToggle = el('#rcg-backsplash', appRoot);
   if (backsplashToggle) backsplashToggle.addEventListener('change', () => {
     state.backsplash = backsplashToggle.checked;
   });
 
-  // stone dropdown
   const colorSel = el('#rcg-color', appRoot);
   if (colorSel) {
     colorSel.value = DEFAULT_COLOR;
@@ -1063,9 +972,7 @@
         <span class="rcg-sub">Max side ≈ ${sMax}" (to keep size ≤ ${MAX_DIAM}")</span>`;
     }
 
-    const onInput = () => { readDims(); drawShape(); };
-    h.oninput = onInput;
-
+    h.oninput = () => { readDims(); drawShape(); };
     h.onchange = () => {
       ['#dim-L', '#dim-W', '#dim-D', '#dim-A'].forEach(sel => {
         const i = el(sel, appRoot);
@@ -1322,7 +1229,6 @@
     };
   }
 
-  // Checkout
   el('#rcg-checkout', appRoot).onclick = () => {
     const zip = (el('#rcg-zip', appRoot).value || '').trim();
     if (!/^\d{5}$/.test(zip)) return alert('Enter a valid 5-digit ZIP to continue.');
@@ -1331,7 +1237,7 @@
   };
 
   // -----------------------------
-  // DXF Builder (inches)
+  // DXF Builder
   // -----------------------------
   function buildDXF(cfg) {
     const out = [];
@@ -1339,7 +1245,7 @@
     const sec = (name) => push('0', 'SECTION', '2', name);
     const endsec = () => push('0', 'ENDSEC');
 
-    const header = () => { sec('HEADER'); push('9', '$INSUNITS', '70', '1'); endsec(); }; // inches
+    const header = () => { sec('HEADER'); push('9', '$INSUNITS', '70', '1'); endsec(); };
     const start = () => { header(); sec('TABLES'); endsec(); sec('ENTITIES'); };
     const finish = () => { endsec(); push('0', 'EOF'); return out.join('\n'); };
 
@@ -1383,7 +1289,6 @@
       text(R, 2*R+2.0, 0.35, `${n}-gon, side ${s}"`, 'TEXT');
     }
 
-    // Backsplash OUTSIDE slab with 1" gap
     if(shape==='rectangle' && cfg.backsplash){
       const polished = cfg.edges || [];
       const sides=['top','right','bottom','left'];
@@ -1398,7 +1303,6 @@
       });
     }
 
-    // Sink cutouts + faucet holes
     if(shape==='rectangle' && Array.isArray(cfg.sinks)){
       cfg.sinks.forEach(s=>{
         const tpl = SINK_TEMPLATES[s.key];
@@ -1410,7 +1314,6 @@
         if(tpl.shape==='oval') lwpoly(ellipsePoly(s.x, s.y, tpl.w/2, tpl.h/2, 120), true, 'CUT');
         else rect(x0, y0, tpl.w, tpl.h, 'CUT');
 
-        // Faucet holes: 1 or 3, Ø1.25", 2" above sink cutout
         const r = 1.25/2;
         const holeY = y0 - 2;
         const cx = s.x;
@@ -1426,7 +1329,6 @@
       });
     }
 
-    // Polished edges note
     if(shape==='rectangle'){
       const edges = (cfg.edges||[]).map(e=>e[0].toUpperCase()+e.slice(1)).join(', ') || 'None';
       text(0, (bbox[3]||0)+6, 0.35, `Polished edges: ${edges}`, 'TEXT');
@@ -1435,7 +1337,6 @@
     return finish();
   }
 
-  // Email DXF (client -> server)
   el('#rcg-email-dxf', appRoot).onclick = async () => {
     try{
       const email = (el('#rcg-email', appRoot)?.value || '').trim();
@@ -1469,7 +1370,7 @@
   };
 
   // -----------------------------
-  // Desktop: draggable panel (smooth, no “cursor hop”)
+  // Desktop: draggable panel
   // -----------------------------
   const panel = el('#rcg-panel', appRoot);
   const handle = el('#rcg-panel-handle', appRoot);
@@ -1487,7 +1388,6 @@
     let grabOffsetY = 0;
 
     function getBoundsRect() {
-      // constrain within the whole configurator body so it never disappears
       const body = el('.rcg-body', appRoot);
       return body ? body.getBoundingClientRect() : document.documentElement.getBoundingClientRect();
     }
@@ -1502,10 +1402,7 @@
 
       handle.style.cursor = 'grabbing';
       document.body.style.userSelect = 'none';
-
-      // switch to left/top positioning (removes "right" anchoring)
       panel.style.right = 'auto';
-
       e.preventDefault();
     }
 
@@ -1516,11 +1413,9 @@
       const pw = panel.offsetWidth;
       const ph = panel.offsetHeight;
 
-      // desired top-left (absolute in viewport)
       let left = e.clientX - grabOffsetX;
       let top  = e.clientY - grabOffsetY;
 
-      // constrain inside bounds
       const minL = bounds.left + 8;
       const minT = bounds.top + 8;
       const maxL = bounds.right - pw - 8;
@@ -1529,7 +1424,6 @@
       left = clamp(left, minL, maxL);
       top  = clamp(top,  minT, maxT);
 
-      // convert viewport coords to parent-relative coords
       const parent = panel.offsetParent || panel.parentElement;
       const parentRect = parent.getBoundingClientRect();
       panel.style.left = `${Math.round(left - parentRect.left)}px`;
@@ -1548,7 +1442,7 @@
   })();
 
   // -----------------------------
-  // Mobile: keep preview tappable above bottom sheet
+  // Mobile preview inset
   // -----------------------------
   let ro = null;
   function syncMobilePreviewInset() {
@@ -1576,13 +1470,14 @@
   // -----------------------------
   renderShapeIcons(el('#shape-icons', appRoot));
   setHandleMode();
-  window.addEventListener('resize', () => { setHandleMode(); syncMobilePreviewInset(); });
+  window.addEventListener('resize', () => { setHandleMode(); syncMobilePreviewInset(); syncMode(); });
 
   setShapeFromIcon('square');
   refreshSinkPills();
   goto(1);
 
-  // If user opens modal later, ensure inset is correct
+  syncMobilePreviewInset();
   syncMode();
-
 })();
+
+  
