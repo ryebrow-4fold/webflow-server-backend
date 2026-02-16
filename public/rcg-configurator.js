@@ -211,6 +211,29 @@ const STEP_INSTRUCTIONS = {
         overflow: hidden;
       }
 
+      /* Mobile topbar: true 3-column layout */
+@media (max-width: 980px){
+  .rcg-topbar{
+    display:grid;
+    grid-template-columns: 52px 1fr 52px; /* logo / centered text / close */
+    align-items:center;
+  }
+  .rcg-topbar .left{
+    width:52px;
+    justify-self:start;
+  }
+  .rcg-topbar .meta{
+    justify-self:center;
+    text-align:center;
+    font-size: 14px;
+    font-weight: 800;
+    white-space: nowrap;
+  }
+  .rcg-close.rcg-close-x{
+    justify-self:end;
+  }
+}
+
       .rcg-topbar{
         display:flex;
         align-items:center;
@@ -260,12 +283,30 @@ const STEP_INSTRUCTIONS = {
         border: 1px solid #e5e5e5;
       }
       .rcg-preview{
-        flex: 1;
-        min-height: 0;
-        background:#fff;
-        position: relative;
-        overflow: hidden;
-        padding-bottom: clamp(40px, calc(var(--rcg-sheet-h, 0px) * 0.18), 140px);
+  flex: 1;
+  min-height: 0;
+  background:#fff;
+  position: relative;
+  overflow: hidden;
+  padding-bottom: 0 !important; /* remove fake white space */
+}
+
+.rcg-preview-spacer{
+  position:absolute;
+  left:0;
+  right:0;
+  bottom:0;
+  height:0;
+  pointer-events:none;
+}
+
+/* Mobile only: spacer matches pane height */
+@media (max-width: 980px){
+  .rcg-preview-spacer{
+    height: calc(var(--rcg-sheet-h, 0px) + 10px);
+  }
+}
+
       }
         @media (max-width: 980px){
         .rcg-preview{ aspect-ratio: auto; }
@@ -360,6 +401,38 @@ const STEP_INSTRUCTIONS = {
     color:#111;
     white-space: nowrap;
     margin: 0 6px;
+  }
+}
+
+/* Desktop: header = left meta, right buttons */
+@media (min-width: 981px){
+  .rcg-panel-handle{
+    display:flex;
+    align-items:center;
+    justify-content:space-between; /* left group / right group */
+    gap:10px;
+  }
+
+  /* Left side meta (step count + label) */
+  .rcg-pane-left{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    min-width: 0;
+  }
+  #rcg-pane-meta{
+    display:block;           /* show it on desktop */
+    font-weight: 900;
+    font-size: 13px;
+    color:#111;
+    white-space: nowrap;
+  }
+
+  /* Back sits left of Next on right side */
+  .rcg-pane-actions{
+    display:flex;
+    align-items:center;
+    gap:8px;
   }
 }
 
@@ -478,13 +551,15 @@ const STEP_INSTRUCTIONS = {
       <div class="rcg-modal" id="rcg-modal" aria-hidden="true">
         <div class="rcg-window">
           <div class="rcg-topbar">
-            <div class="left">
-              <img class="rcg-logo ${LOGO_URL ? 'rcg-has':''}" ${LOGO_URL ? `src="${LOGO_URL}"` : ''} alt="">
-              <div style="position:absolute;left:-9999px;">Rock Creek Granite</div>
-              <div class="meta" id="rcg-stepper-top">Step 1/4</div>
-            </div>
-            <button class="rcg-close rcg-close-x" id="rcg-close" aria-label="Close">✕</button>
-          </div>
+  <div class="left">
+    <img class="rcg-logo ${LOGO_URL ? 'rcg-has':''}" ${LOGO_URL ? `src="${LOGO_URL}"` : ''} alt="">
+    <div style="position:absolute;left:-9999px;">Rock Creek Granite</div>
+  </div>
+
+  <div class="meta" id="rcg-stepper-top">Step 1 of 4</div>
+
+  <button class="rcg-close rcg-close-x" id="rcg-close" aria-label="Close">✕</button>
+</div>
           <div class="rcg-modal-body" id="rcg-modal-body"></div>
         </div>
       </div>
@@ -499,11 +574,26 @@ const STEP_INSTRUCTIONS = {
       <div class="rcg-app" id="rcg-app">
         <div class="rcg-body">
           <div class="rcg-preview">
-            <svg id="rcg-svg" class="rcg-stage" viewBox="0 0 1400 600" preserveAspectRatio="xMidYMin meet"></svg>
-          </div>
+  <svg id="rcg-svg" class="rcg-stage" viewBox="0 0 1400 600" preserveAspectRatio="xMidYMid meet"></svg>
+  <div class="rcg-preview-spacer" aria-hidden="true"></div>
+</div>
 
           <aside class="rcg-panel" id="rcg-panel">
   <div class="rcg-panel-handle" id="rcg-panel-handle" title="Drag to move (desktop)">
+  <div class="rcg-pane-left">
+  <div class="step">
+    <span id="rcg-pane-label"></span>
+  </div>
+  <div id="rcg-pane-meta" class="rcg-pane-meta"></div>
+</div>
+
+<div class="rcg-pane-actions">
+  <button class="rcg-btn outline rcg-icon-btn" id="rcg-back" aria-label="Back" title="Back">
+    <span aria-hidden="true">‹</span>
+  </button>
+
+  <button class="rcg-btn" id="rcg-next">Next</button>
+</div>
     <div class="step">
       <span id="rcg-pane-label"></span>
     </div>
@@ -1070,7 +1160,7 @@ if (visibleInstr) visibleInstr.textContent = STEP_INSTRUCTIONS[state.step] || ''
 
 // Topbar: mobile should show ONLY X/4
 const top = el('#rcg-stepper-top', mount);
-if (top) top.textContent = `${state.step}/4`;
+if (top) top.textContent = `Step ${state.step} of 4`;
 
 // Pane header:
 // - Mobile: show Step Label on left
