@@ -218,7 +218,7 @@
         background:#fff;
         position: relative;
         overflow: hidden;
-        padding-bottom: calc(var(--rcg-sheet-h, 0px) * 0.55);
+        padding-bottom: calc(var(--rcg-sheet-h, 0px) * 0.40);
       }
       .rcg-stage{
         width:100%;
@@ -303,12 +303,12 @@
         .rcg-panel{
           position: absolute;
           left: 0; right: 0; bottom: 0;
-          max-height: 38vh;
+          max-height: 58vh;
           overflow: auto;
           border-top: 2px solid #ddd;
 
           /* +25px and safe area for toolbar overlap */
-          padding-bottom: calc(18px + 25px + env(safe-area-inset-bottom, 0px));
+          padding-bottom: calc(18px + 44px + env(safe-area-inset-bottom, 0px));
         }
         .rcg-panel-handle{ position: sticky; top: 0; z-index: 5; }
         .rcg-title{ font-size: 20px; }
