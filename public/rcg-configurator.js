@@ -404,6 +404,78 @@ const STEP_INSTRUCTIONS = {
   }
 }
 
+/* Step 2 status chip */
+.rcg-edge-status{
+  display:flex;
+  align-items:flex-start;
+  gap:10px;
+  background:#fff;
+  border:1px solid #cfcfcf;
+  padding:10px 10px;
+  margin: 6px 0 0;
+}
+.rcg-edge-icon{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:4px;
+  width:26px;
+  height:26px;
+  flex:0 0 auto;
+}
+.rcg-edge-icon .line{
+  display:inline-block;
+  height:18px;
+  border-radius:0;
+}
+.rcg-edge-icon .thin{
+  width:3px;
+  background:#111;
+}
+.rcg-edge-icon .thick{
+  width:6px;
+  background: var(--rcg-yellow);
+}
+.rcg-edge-status .txt .t{
+  font-weight:900;
+  font-size:13px;
+  color:#111;
+  line-height:1.1;
+}
+.rcg-edge-status .txt .s{
+  margin-top:2px;
+  font-weight:600;
+  font-size:12px;
+  color: var(--rcg-muted);
+  line-height:1.2;
+}
+.rcg-edge-status.rcg-pulse{
+  outline: 2px solid rgba(255,196,0,0.45);
+  outline-offset: 0;
+}
+
+/* Callout over canvas (first-time on Step 2) */
+.rcg-callout{
+  position:absolute;
+  left:12px;
+  top:12px;
+  background: #111;
+  color:#fff;
+  padding:10px 12px;
+  font-weight:900;
+  font-size:13px;
+  z-index: 20;
+  max-width: 70%;
+}
+@media (max-width: 980px){
+  .rcg-callout{
+    left:10px;
+    top:10px;
+    font-size:14px;
+    max-width: 80%;
+  }
+}
+
 /* Desktop: header = left meta, right buttons */
 @media (min-width: 981px){
   .rcg-panel-handle{
@@ -575,6 +647,11 @@ const STEP_INSTRUCTIONS = {
         <div class="rcg-body">
           <div class="rcg-preview">
   <svg id="rcg-svg" class="rcg-stage" viewBox="0 0 1400 600" preserveAspectRatio="xMidYMid meet"></svg>
+
+  <div id="rcg-edge-callout" class="rcg-callout rcg-hidden" role="status" aria-live="polite">
+    Tap edges to toggle polish
+  </div>
+
   <div class="rcg-preview-spacer" aria-hidden="true"></div>
 </div>
 
@@ -603,20 +680,40 @@ const STEP_INSTRUCTIONS = {
             </div>
 
             <div id="rcg-step2" class="rcg-step rcg-hidden">
-              <div class="rcg-title" id="rcg-instr-2"></div>
-              <div class="rcg-sub">Tap each edge in the preview. Yellow = polished. Unpolished sides can receive optional 4" backsplash.</div>
+  <div class="rcg-title" id="rcg-instr-2"></div>
 
-              <div class="rcg-row" id="rcg-polish-choice" style="margin:8px 0 4px 0">
-                <label style="display:flex;align-items:center;gap:6px"><input type="radio" name="rcg-polish" value="select" checked> I will select polished edges</label>
-                <label style="display:flex;align-items:center;gap:6px"><input type="radio" name="rcg-polish" value="none"> No polished edges please</label>
-              </div>
+  <!-- Status chip (icon + stateful label) -->
+  <div class="rcg-edge-status" id="rcg-edge-status" aria-live="polite">
+    <span class="rcg-edge-icon" aria-hidden="true">
+      <span class="line thin"></span>
+      <span class="line thick"></span>
+    </span>
+    <div class="txt">
+      <div class="t" id="rcg-edge-status-title">Polished edges selected</div>
+      <div class="s" id="rcg-edge-status-sub">Tap an edge to toggle polished or not-polished.</div>
+    </div>
+  </div>
 
-              <div class="rcg-row" style="margin-top:4px">
-                <label class="rcg-label" for="rcg-backsplash">Add 4" Backsplash</label>
-                <input id="rcg-backsplash" type="checkbox" style="width:18px;height:18px">
-              </div>
-              <div class="rcg-sub">If selected, 4" backsplash will be included for all non-polished sides.</div>
-            </div>
+  <!-- Optional radio (kept, but Next never blocked) -->
+  <div class="rcg-row" id="rcg-polish-choice" style="margin:10px 0 6px 0">
+    <label style="display:flex;align-items:center;gap:6px">
+      <input type="radio" name="rcg-polish" value="select" checked>
+      Select polished edges
+    </label>
+    <label style="display:flex;align-items:center;gap:6px">
+      <input type="radio" name="rcg-polish" value="none">
+      No edges polished
+    </label>
+  </div>
+
+  <!-- Backsplash checkbox LEFT of text -->
+  <label class="rcg-row rcg-checkrow" style="margin-top:6px;align-items:center;gap:10px;cursor:pointer">
+    <input id="rcg-backsplash" type="checkbox" style="width:18px;height:18px">
+    <span class="rcg-label">Add 4" Backsplash</span>
+  </label>
+
+  <div class="rcg-sub">Backsplash applies to all not-polished sides.</div>
+</div>
 
             <div id="rcg-step3" class="rcg-step rcg-hidden">
               <div class="rcg-title" id="rcg-instr-3"></div>
@@ -719,18 +816,86 @@ const STEP_INSTRUCTIONS = {
   // -----------------------------
   // State
   // -----------------------------
-  const state = {
-    step: 1,
-    shape: null,       // 'rectangle' | 'circle' | 'polygon'
-    dims: {},
-    sinks: [],
-    color: DEFAULT_COLOR,
-    edges: [],
-    area: 0,
-    activeIcon: 'square',
-    backsplash: false,
-    polishMode: 'select'
-  };
+ const state = {
+  // dynamic steps
+  stepOrder: [1,2,3,4],
+  stepId: 1,
+
+  shape: null,       // 'rectangle' | 'circle' | 'polygon'
+  dims: {},
+  sinks: [],
+  color: DEFAULT_COLOR,
+  edges: [],
+  area: 0,
+  activeIcon: 'square',
+  backsplash: false,
+  polishMode: 'select',
+
+  // UI helpers
+  hoverEdge: null,
+  step2Initialized: false
+};
+
+function initStep2DefaultsIfNeeded() {
+  if (state.shape !== 'rectangle') return;
+  if (state.step2Initialized) return;
+
+  // default to 3 edges selected: left, right, bottom
+  state.polishMode = 'select';
+  state.edges = ['left', 'right', 'bottom'];
+
+  // sync radios in UI
+  const radios = els('input[name="rcg-polish"]', appRoot);
+  radios.forEach(r => r.checked = (r.value === state.polishMode));
+
+  state.step2Initialized = true;
+}
+
+function updateEdgeStatusUI() {
+  const title = el('#rcg-edge-status-title', appRoot);
+  const sub   = el('#rcg-edge-status-sub', appRoot);
+  if (!title || !sub) return;
+
+  const count = state.edges.length;
+
+  if (state.polishMode === 'none') {
+    title.textContent = 'No edges polished';
+    sub.textContent = 'All edges will be not-polished.';
+    return;
+  }
+
+  if (count === 0) {
+    title.textContent = 'No edges polished';
+    sub.textContent = 'Tap an edge to mark it polished.';
+  } else {
+    title.textContent = 'Polished edges selected';
+    sub.textContent = 'Tap an edge to toggle polished or not-polished.';
+  }
+}
+
+function pulseEdgeStatus() {
+  const chip = el('#rcg-edge-status', appRoot);
+  if (!chip) return;
+  chip.classList.add('rcg-pulse');
+  window.clearTimeout(pulseEdgeStatus.__t);
+  pulseEdgeStatus.__t = window.setTimeout(() => chip.classList.remove('rcg-pulse'), 260);
+}
+
+function maybeShowEdgeCallout() {
+  if (state.shape !== 'rectangle') return;
+  const callout = el('#rcg-edge-callout', appRoot);
+  if (!callout) return;
+
+  const key = 'rcg_edge_callout_seen_v1';
+  const seen = window.localStorage && localStorage.getItem(key) === '1';
+  if (seen) return;
+
+  callout.classList.remove('rcg-hidden');
+  // auto-hide after a moment
+  window.setTimeout(() => callout.classList.add('rcg-hidden'), 2600);
+
+  try { localStorage.setItem(key, '1'); } catch {}
+}
 
   // -----------------------------
   // Shape icons
@@ -893,7 +1058,7 @@ const STEP_INSTRUCTIONS = {
     clip.innerHTML = '';
     clip.appendChild(pathEl.cloneNode(true));
 
-    const showTexture = (state.step >= 4 && !!state.color);
+    const showTexture = (state.stepId === 4 && !!state.color);
     if (showTexture) {
       const col = COLORS.find(x => x.key === state.color);
       if (col && col.url) {
@@ -920,43 +1085,75 @@ const STEP_INSTRUCTIONS = {
   : Math.max(18, Math.min(36, Math.min(ew, eh) * 0.14));
 
       function drawEdge(x1, y1, x2, y2, key) {
-        const active = state.edges.includes(key);
-        const seg = document.createElementNS(ns, 'line');
-        seg.setAttribute('x1', x1); seg.setAttribute('y1', y1);
-        seg.setAttribute('x2', x2); seg.setAttribute('y2', y2);
-        seg.setAttribute('stroke', active ? 'var(--rcg-yellow)' : '#111');
-        seg.setAttribute('stroke-width', active ? (isMobile()? '8':'6') : '2');
-        edgesG.appendChild(seg);
-      }
+  const active = state.edges.includes(key);
+  const hover = (state.hoverEdge === key);
+
+  const seg = document.createElementNS(ns, 'line');
+  seg.setAttribute('x1', x1); seg.setAttribute('y1', y1);
+  seg.setAttribute('x2', x2); seg.setAttribute('y2', y2);
+
+  // active -> yellow thick; hover -> slightly thicker (even if not active)
+  seg.setAttribute('stroke', active ? 'var(--rcg-yellow)' : '#111');
+
+  let w = active ? (isMobile() ? 8 : 6) : 2;
+  if (hover) w = Math.max(w, isMobile() ? 6 : 4);
+  seg.setAttribute('stroke-width', String(w));
+
+  edgesG.appendChild(seg);
+}
 
       drawEdge(ex, ey, ex + ew, ey, 'top');
       drawEdge(ex + ew, ey, ex + ew, ey + eh, 'right');
       drawEdge(ex, ey + eh, ex + ew, ey + eh, 'bottom');
       drawEdge(ex, ey, ex, ey + eh, 'left');
 
-      if (state.step === 2) {
-        const zones = [
-          { key: 'top', x: ex, y: ey, w: ew, h: band },
-          { key: 'bottom', x: ex, y: ey + eh - band, w: ew, h: band },
-          { key: 'left', x: ex, y: ey, w: band, h: eh },
-          { key: 'right', x: ex + ew - band, y: ey, w: band, h: eh }
-        ];
-        zones.forEach(z => {
-          const r = document.createElementNS(ns, 'rect');
-          r.setAttribute('x', z.x); r.setAttribute('y', z.y);
-          r.setAttribute('width', z.w); r.setAttribute('height', z.h);
-          r.setAttribute('fill', 'rgba(0,0,0,0.001)');
-          r.setAttribute('pointer-events', 'all');
-          r.style.cursor = 'pointer';
-          r.addEventListener('click', () => {
-            const i = state.edges.indexOf(z.key);
-            if (i > -1) state.edges.splice(i, 1);
-            else state.edges.push(z.key);
-            drawShape(); updateNav();
-          });
-          hotG.appendChild(r);
-        });
+      if (state.stepId === 2) {
+  const zones = [
+    { key: 'top', x: ex, y: ey, w: ew, h: band },
+    { key: 'bottom', x: ex, y: ey + eh - band, w: ew, h: band },
+    { key: 'left', x: ex, y: ey, w: band, h: eh },
+    { key: 'right', x: ex + ew - band, y: ey, w: band, h: eh }
+  ];
+
+  zones.forEach(z => {
+    const r = document.createElementNS(ns, 'rect');
+    r.setAttribute('x', z.x); r.setAttribute('y', z.y);
+    r.setAttribute('width', z.w); r.setAttribute('height', z.h);
+    r.setAttribute('fill', 'rgba(0,0,0,0.001)');
+    r.setAttribute('pointer-events', 'all');
+    r.style.cursor = 'pointer';
+
+    r.addEventListener('pointerenter', () => {
+      state.hoverEdge = z.key;
+      drawShape();
+      pulseEdgeStatus();
+    });
+    r.addEventListener('pointerleave', () => {
+      state.hoverEdge = null;
+      drawShape();
+    });
+
+    r.addEventListener('click', () => {
+      if (state.polishMode === 'none') {
+        // if user toggles edges while in "none", automatically switch to select mode
+        state.polishMode = 'select';
+        const radios = els('input[name="rcg-polish"]', appRoot);
+        radios.forEach(rr => rr.checked = (rr.value === 'select'));
       }
+
+      const i = state.edges.indexOf(z.key);
+      if (i > -1) state.edges.splice(i, 1);
+      else state.edges.push(z.key);
+
+      updateEdgeStatusUI();
+      drawShape();
+      updateNav(); // Next never blocked; still updates UI
+    });
+
+    hotG.appendChild(r);
+  });
+}
+
     }
 
     if (state.shape === 'rectangle') {
@@ -1037,7 +1234,7 @@ const STEP_INSTRUCTIONS = {
       });
 
       function startSinkDrag(e, idx, tpl, bbox, s) {
-        if (state.step !== 3) return;
+        if (state.stepId) return;
         e.preventDefault();
 
         const rectX = bbox.x, rectY = bbox.y;
@@ -1124,62 +1321,85 @@ const STEP_INSTRUCTIONS = {
   }
 
   // -----------------------------
-  // Steps + navigation
-  // -----------------------------
-  function visibleStepCount() { return 4; }
+// Steps + navigation (dynamic flow)
+// -----------------------------
+function getStepOrder() {
+  // circle & polygon skip polish + sinks (all edges polished by default)
+  return (state.shape === 'rectangle') ? [1,2,3,4] : [1,4];
+}
 
-  function updateStepHints() {
-    const isRect = state.shape === 'rectangle';
-    const sinksBlock = el('#rcg-sinks-block', appRoot);
-    const note = el('#rcg-nonrect-note', appRoot);
-    if (sinksBlock) sinksBlock.classList.toggle('rcg-hidden', !isRect);
-    if (note) note.style.display = isRect ? 'none' : 'block';
+function stepTotal() { return state.stepOrder.length; }
+function stepIndex() { return Math.max(0, state.stepOrder.indexOf(state.stepId)); }
+
+function showStepId(stepId) {
+  state.stepId = stepId;
+
+  // Show only the requested step panel
+  els('.rcg-step', appRoot).forEach(s => s.classList.add('rcg-hidden'));
+  const stepEl = el(`#rcg-step${stepId}`, appRoot);
+  if (stepEl) stepEl.classList.remove('rcg-hidden');
+
+  // Body instruction title
+  const visibleInstr = el(`#rcg-instr-${stepId}`, appRoot);
+  if (visibleInstr) visibleInstr.textContent = STEP_INSTRUCTIONS[stepId] || '';
+
+  // Top stepper: "Step X of N"
+  const top = el('#rcg-stepper-top', mount);
+  const idx = stepIndex();
+  const total = stepTotal();
+  if (top) top.textContent = `Step ${idx + 1} of ${total}`;
+
+  // Pane header label/meta
+  const paneLabel = el('#rcg-pane-label', appRoot);
+  if (paneLabel) paneLabel.textContent = STEP_LABELS[stepId] || '';
+
+  const paneMeta = el('#rcg-pane-meta', appRoot);
+  if (paneMeta) paneMeta.textContent = `${idx + 1}/${total} — ${STEP_LABELS[stepId] || ''}`;
+
+  // Step-specific entry behaviors
+  if (stepId === 2 && state.shape === 'rectangle') {
+    initStep2DefaultsIfNeeded();
+    updateEdgeStatusUI();
+    maybeShowEdgeCallout();
   }
 
-  function goto(step) {
-    state.step = clamp(step, 1, visibleStepCount());
-    els('.rcg-step', appRoot).forEach((s, i) => s.classList.toggle('rcg-hidden', i !== state.step - 1));
-    // Instruction in the step body (below the pane header)
-const visibleInstr = el(`#rcg-instr-${state.step}`, appRoot);
-if (visibleInstr) visibleInstr.textContent = STEP_INSTRUCTIONS[state.step] || '';
+  drawShape();
+  updateNav();
+  updateStepHints();
+  syncMobilePreviewInset();
+}
 
-// Topbar: mobile should show ONLY X/4
-const top = el('#rcg-stepper-top', mount);
-if (top) top.textContent = `Step ${state.step} of 4`;
+function gotoNext() {
+  const idx = stepIndex();
+  if (idx >= stepTotal() - 1) return;
+  showStepId(state.stepOrder[idx + 1]);
+}
 
-// Pane header:
-// - Mobile: show Step Label on left
-// - Desktop: show "X/4 — Step Label" near buttons
-const paneLabel = el('#rcg-pane-label', appRoot);
-if (paneLabel) paneLabel.textContent = STEP_LABELS[state.step] || '';
+function gotoPrev() {
+  const idx = stepIndex();
+  if (idx <= 0) return;
+  showStepId(state.stepOrder[idx - 1]);
+}
 
-const paneMeta = el('#rcg-pane-meta', appRoot);
-if (paneMeta) paneMeta.textContent = `${state.step}/4 — ${STEP_LABELS[state.step] || ''}`;
-
-    drawShape();
-    updateNav();
-    updateStepHints();
-    syncMobilePreviewInset();
-  }
-
-  function updateNav() {
+function updateNav() {
   const back = el('#rcg-back', appRoot);
   const next = el('#rcg-next', appRoot);
   if (!back || !next) return;
 
-  back.style.visibility = state.step === 1 ? 'hidden' : 'visible';
+  const idx = stepIndex();
+  const total = stepTotal();
+
+  back.style.visibility = (idx === 0) ? 'hidden' : 'visible';
 
   // Button label
-  next.textContent = (state.step === 4) ? 'Checkout' : 'Next';
+  next.textContent = (idx === total - 1) ? 'Checkout' : 'Next';
 
   // Disable rules
   let disableNext = false;
 
-  if (state.step === 2 && state.shape === 'rectangle') {
-    disableNext = (state.polishMode === 'select' && state.edges.length === 0);
-  }
-
-  if (state.step === 4) {
+  // Step 2: NEVER block Next (edges are optional)
+  // Only validate ZIP on final step
+  if (state.stepId === 4) {
     const zip = (el('#rcg-zip', appRoot)?.value || '').trim();
     disableNext = !/^\d{5}$/.test(zip);
   }
@@ -1190,12 +1410,13 @@ if (paneMeta) paneMeta.textContent = `${state.step}/4 — ${STEP_LABELS[state.st
 const nextBtn = el('#rcg-next', appRoot);
 const backBtn = el('#rcg-back', appRoot);
 
-if (backBtn) backBtn.addEventListener('click', () => goto(state.step - 1));
+if (backBtn) backBtn.addEventListener('click', () => gotoPrev());
 
 if (nextBtn) nextBtn.addEventListener('click', async () => {
-  if (nextBtn.disabled) return;   // <-- put it here, inside the handler
+  if (nextBtn.disabled) return;
 
-  if (state.step === 4) {
+  // If final step in current flow -> checkout
+  if (state.stepId === 4) {
     const zip = (el('#rcg-zip', appRoot)?.value || '').trim();
     if (!/^\d{5}$/.test(zip)) return;
 
@@ -1205,19 +1426,18 @@ if (nextBtn) nextBtn.addEventListener('click', async () => {
     return;
   }
 
-  if (state.step === 1) {
-    goto(state.shape === 'rectangle' ? 2 : 4);
-    return;
-  }
-
-  goto(state.step + 1);
+  gotoNext();
 });
 
   els('input[name="rcg-polish"]', appRoot).forEach(r => r.addEventListener('change', () => {
-    state.polishMode = r.value;
-    if (state.polishMode === 'none') state.edges = [];
-    drawShape(); updateNav();
-  }));
+  state.polishMode = r.value;
+
+  if (state.polishMode === 'none') state.edges = [];
+
+  drawShape();
+  updateEdgeStatusUI();
+  updateNav();
+}));
 
   const backsplashToggle = el('#rcg-backsplash', appRoot);
   if (backsplashToggle) backsplashToggle.addEventListener('change', () => {
@@ -1294,20 +1514,30 @@ if (nextBtn) nextBtn.addEventListener('click', async () => {
   }
 
   function setShapeFromIcon(icon) {
-    state.activeIcon = icon;
-    state.shape = (icon === 'square') ? 'rectangle' : icon;
+  state.activeIcon = icon;
+  state.shape = (icon === 'square') ? 'rectangle' : icon;
 
-    state.sinks = [];
-    state.edges = [];
-    state.backsplash = false;
-    state.polishMode = 'select';
+  state.sinks = [];
+  state.edges = [];
+  state.backsplash = false;
 
-    els('[data-icon]', appRoot).forEach(b => b.classList.toggle('active', b.dataset.icon === icon));
-    buildDimInputs();
-    updateStepHints();
-    drawShape();
-    updateNav();
-  }
+  // circle/polygon: edges polished by default, but we omit Step 2 entirely
+  state.polishMode = 'select';
+
+  // reset step2 init so rectangle gets the 3-edge default
+  state.step2Initialized = false;
+  state.hoverEdge = null;
+
+  // build dynamic step order
+  state.stepOrder = getStepOrder();
+
+  els('[data-icon]', appRoot).forEach(b => b.classList.toggle('active', b.dataset.icon === icon));
+  buildDimInputs();
+  updateStepHints();
+
+  // Always return to Step 1 of the new flow
+  showStepId(1);
+}
 
   // -----------------------------
   // Step 3 sinks UI
@@ -1758,7 +1988,8 @@ pos = {
 
   setShapeFromIcon('square');
   refreshSinkPills();
-  goto(1);
+  state.stepOrder = getStepOrder();
+showStepId(1);
 
   syncMobilePreviewInset();
   syncMode();
