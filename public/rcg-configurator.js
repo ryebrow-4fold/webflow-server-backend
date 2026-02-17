@@ -668,6 +668,60 @@ const STEP_INSTRUCTIONS = {
   opacity: 0.0;
 }
 }
+
+@media (min-width: 981px){
+  .rcg-panel{ padding: 0 !important; }
+
+  .rcg-panel-handle{
+    margin: 0 !important;
+    border: 0 !important;
+    background: var(--rcg-yellow) !important;
+    padding: 0 !important;
+    justify-content: space-between !important;
+  }
+
+  .rcg-pane-left,
+  .rcg-pane-actions{
+    padding: 10px 12px !important;
+  }
+
+  #rcg-pane-label,
+  #rcg-pane-meta,
+  .rcg-panel-handle .step{
+    color:#000 !important;
+  }
+
+  #rcg-back{
+    border: 2px solid #fff !important;
+    background: transparent !important;
+  }
+  #rcg-back span{ color:#fff !important; }
+
+  #rcg-next{
+    background:#fff !important;
+    color:#000 !important;
+    border:2px solid #fff !important;
+  }
+
+  #rcg-next[disabled]{ opacity: .55 !important; }
+}
+  @media (min-width: 981px){
+  /* shorten overall configurator */
+  .rcg-body{ min-height: 600px !important; }
+
+  /* make preview shorter but still roomy */
+  .rcg-preview{
+    height: clamp(280px, 38vh, 420px) !important;
+  }
+
+  /* ensure svg fills preview fully */
+  .rcg-stage{
+    width: 100% !important;
+    height: 100% !important;
+    display:block;
+  }
+}
+
     </style>
 
     <div class="rcg-root">
@@ -1257,8 +1311,13 @@ function maybeShowEdgeCallout() {
         });
 
         // Drag behavior (smooth on mobile): do NOT redraw per move; update snk coords and redraw on RAF
-        node.addEventListener('mousedown', (e) => startSinkDrag(e, idx, tpl, bbox, s));
-        node.addEventListener('touchstart', (e) => startSinkDrag(e, idx, tpl, bbox, s), { passive: false });
+        node.style.touchAction = 'none';
+node.addEventListener('pointerdown', (e) => {
+  if (state.stepId !== 3) return;
+  node.setPointerCapture?.(e.pointerId);
+  startSinkDrag(e, idx, tpl, bbox, s);
+});
+
       });
 
       function startSinkDrag(e, idx, tpl, bbox, s) {
@@ -1289,6 +1348,10 @@ function maybeShowEdgeCallout() {
         const onMove = (e) => {
           if (!activeSinkDrag) return;
           if (state.step !== 3) return;
+
+          svg.addEventListener('pointermove', onMove, { passive: false });
+svg.addEventListener('pointerup', cancelSinkDrag);
+svg.addEventListener('pointercancel', cancelSinkDrag);
 
           e.preventDefault();
 
@@ -1937,6 +2000,11 @@ pos = {
 
     function onDown(e){
       if(!isDesktop()) return;
+
+  // ✅ NEW: ignore clicks on interactive controls (prevents the hop)
+  if (e.target && e.target.closest && e.target.closest('button, input, select, textarea, a')) {
+    return;
+  }
       dragging = true;
 
       const pr = panel.getBoundingClientRect();
