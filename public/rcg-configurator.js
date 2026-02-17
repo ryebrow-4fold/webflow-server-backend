@@ -722,6 +722,55 @@ const STEP_INSTRUCTIONS = {
   }
 }
 
+/* --- Revert pane header to original style --- */
+.rcg-panel{
+  padding: 12px !important;
+  background: var(--rcg-gray) !important;
+}
+
+.rcg-step{
+  padding: 0 !important; /* step content already sits within panel padding */
+}
+
+.rcg-panel-handle{
+  background: #fff !important;
+  border: 1px solid #cfcfcf !important;
+  padding: 10px 10px !important;
+  margin-bottom: 10px !important;
+}
+
+.rcg-pane-left,
+.rcg-pane-actions{
+  padding: 0 !important;
+}
+
+#rcg-pane-label,
+#rcg-pane-meta,
+.rcg-panel-handle .step,
+.rcg-panel-handle .step small{
+  color: #111 !important;
+}
+
+/* Back button: white with black outline + black caret */
+#rcg-back{
+  background: #fff !important;
+  border: 1px solid #000 !important;
+}
+#rcg-back span{
+  color: #000 !important;
+}
+
+/* Next button: yellow with black text */
+#rcg-next{
+  background: var(--rcg-yellow) !important;
+  color: #000 !important;
+  border: none !important;
+}
+#rcg-next[disabled]{
+  opacity: 0.5 !important;
+}
+
+
     </style>
 
     <div class="rcg-root">
@@ -1280,11 +1329,15 @@ function maybeShowEdgeCallout() {
           node.setAttribute('height', sinkHpx);
           node.setAttribute('rx', '4');
         }
-        node.setAttribute('fill', 'rgba(255,255,255,0.001)');
-        node.setAttribute('stroke', '#d00');
-        node.setAttribute('stroke-width', isMobile() ? '3' : '2');
-        node.style.cursor = 'grab';
-        sinksG.appendChild(node);
+        // Reliable SVG hit-area: use fill + fill-opacity instead of rgba()
+node.setAttribute('fill', '#fff');
+node.setAttribute('fill-opacity', '0.01'); // invisible but clickable
+node.setAttribute('stroke', '#d00');
+node.setAttribute('stroke-width', isMobile() ? '3' : '2');
+node.setAttribute('pointer-events', 'all');
+node.style.cursor = 'grab';
+node.style.touchAction = 'none';
+sinksG.appendChild(node);
 
         // Faucet holes preview (always computed from sink position)
         const holeR = toPx(1.25 / 2);
@@ -1314,8 +1367,14 @@ function maybeShowEdgeCallout() {
         node.style.touchAction = 'none';
 node.addEventListener('pointerdown', (e) => {
   if (state.stepId !== 3) return;
-  node.setPointerCapture?.(e.pointerId);
+  e.preventDefault();
+
   startSinkDrag(e, idx, tpl, bbox, s);
+
+  // bind move/up to window so capture/bubbling can't break dragging
+  window.addEventListener('pointermove', onSinkPointerMove, { passive: false });
+  window.addEventListener('pointerup', onSinkPointerUp, { passive: false });
+  window.addEventListener('pointercancel', onSinkPointerUp, { passive: false });
 });
 
       });
@@ -1340,6 +1399,72 @@ node.addEventListener('pointerdown', (e) => {
 
         activeSinkDrag = { idx, tpl, bbox, s, ox, oy, gw, gh };
       }
+
+      function onSinkPointerMove(e) {
+  if (!activeSinkDrag) return;
+  if (state.stepId !== 3) return;
+
+  e.preventDefault();
+
+  const { idx, tpl, bbox, s, ox, oy, gw, gh } = activeSinkDrag;
+
+  const toPx = v => v * s;
+  const toIn = v => v / s;
+
+  const rectX = bbox.x, rectY = bbox.y;
+
+  const pt = svgPoint(e);
+  let nx = pt.x - ox;
+  let ny = pt.y - oy;
+
+  nx = clamp(
+    nx,
+    rectX + gw / 2 + toPx(MIN_SINK_EDGE),
+    rectX + bbox.width - gw / 2 - toPx(MIN_SINK_EDGE)
+  );
+  ny = clamp(
+    ny,
+    rectY + gh / 2 + toPx(MIN_SINK_EDGE),
+    rectY + bbox.height - gh / 2 - toPx(MIN_SINK_EDGE)
+  );
+
+  const xin = toIn(nx - rectX);
+  const yin = toIn(ny - rectY);
+
+  // collision check
+  let collide = false;
+  state.sinks.forEach((o, j) => {
+    if (j === idx) return;
+    const tt = SINK_TEMPLATES[o.key];
+    const dx = Math.abs(xin - o.x);
+    const dy = Math.abs(yin - o.y);
+    const minDx = (tpl.w / 2 + tt.w / 2 + MIN_SINK_GAP);
+    const minDy = (tpl.h / 2 + tt.h / 2 + MIN_SINK_GAP);
+    if (dx < minDx && dy < minDy) collide = true;
+  });
+  if (collide) return;
+
+  state.sinks[idx].x = xin;
+  state.sinks[idx].y = yin;
+
+  // redraw on next frame for smoothness
+  if (!drawShape.__raf) {
+    drawShape.__raf = requestAnimationFrame(() => {
+      drawShape.__raf = null;
+      drawShape();
+    });
+  }
+}
+
+function onSinkPointerUp() {
+  if (!activeSinkDrag) return;
+
+  activeSinkDrag = null;
+
+  window.removeEventListener('pointermove', onSinkPointerMove);
+  window.removeEventListener('pointerup', onSinkPointerUp);
+  window.removeEventListener('pointercancel', onSinkPointerUp);
+}
 
       // one move handler for the whole svg (smoother)
       if (!svg.__rcg_sink_move_bound) {
