@@ -1149,14 +1149,11 @@ function maybeShowEdgeCallout() {
   let activeSinkDrag = null;
 
   function svgPoint(evt) {
-    const p = svg.createSVGPoint();
-    if (evt.touches && evt.touches[0]) {
-      p.x = evt.touches[0].clientX; p.y = evt.touches[0].clientY;
-    } else {
-      p.x = evt.clientX; p.y = evt.clientY;
-    }
-    return p.matrixTransform(svg.getScreenCTM().inverse());
-  }
+  const p = svg.createSVGPoint();
+  p.x = evt.clientX;
+  p.y = evt.clientY;
+  return p.matrixTransform(svg.getScreenCTM().inverse());
+}
 
   function cancelSinkDrag() {
     activeSinkDrag = null;
@@ -1380,7 +1377,7 @@ node.addEventListener('pointerdown', (e) => {
       });
 
       function startSinkDrag(e, idx, tpl, bbox, s) {
-        if (state.stepId) return;
+        if (state.stepId !== 3) return;
         e.preventDefault();
 
         const rectX = bbox.x, rectY = bbox.y;
@@ -1466,74 +1463,7 @@ function onSinkPointerUp() {
   window.removeEventListener('pointercancel', onSinkPointerUp);
 }
 
-      // one move handler for the whole svg (smoother)
-      if (!svg.__rcg_sink_move_bound) {
-        svg.__rcg_sink_move_bound = true;
-
-        const onMove = (e) => {
-          if (!activeSinkDrag) return;
-          if (state.step !== 3) return;
-
-          svg.addEventListener('pointermove', onMove, { passive: false });
-svg.addEventListener('pointerup', cancelSinkDrag);
-svg.addEventListener('pointercancel', cancelSinkDrag);
-
-          e.preventDefault();
-
-          const { idx, tpl, bbox, s, ox, oy, gw, gh } = activeSinkDrag;
-
-          const toPx = v => v * s;
-          const toIn = v => v / s;
-
-          const rectX = bbox.x, rectY = bbox.y;
-
-          const pt = svgPoint(e);
-          let nx = pt.x - ox;
-          let ny = pt.y - oy;
-
-          nx = clamp(
-            nx,
-            rectX + gw / 2 + toPx(MIN_SINK_EDGE),
-            rectX + bbox.width - gw / 2 - toPx(MIN_SINK_EDGE)
-          );
-          ny = clamp(
-            ny,
-            rectY + gh / 2 + toPx(MIN_SINK_EDGE),
-            rectY + bbox.height - gh / 2 - toPx(MIN_SINK_EDGE)
-          );
-
-          const xin = toIn(nx - rectX);
-          const yin = toIn(ny - rectY);
-
-          // collision check
-          let collide = false;
-          state.sinks.forEach((o, j) => {
-            if (j === idx) return;
-            const tt = SINK_TEMPLATES[o.key];
-            const dx = Math.abs(xin - o.x);
-            const dy = Math.abs(yin - o.y);
-            const minDx = (tpl.w / 2 + tt.w / 2 + MIN_SINK_GAP);
-            const minDy = (tpl.h / 2 + tt.h / 2 + MIN_SINK_GAP);
-            if (dx < minDx && dy < minDy) collide = true;
-          });
-          if (collide) return;
-
-          state.sinks[idx].x = xin;
-          state.sinks[idx].y = yin;
-
-          // redraw on next frame for fluid feel
-          if (!drawShape.__raf) {
-            drawShape.__raf = requestAnimationFrame(() => {
-              drawShape.__raf = null;
-              drawShape();
-            });
-          }
-        };
-
-        svg.addEventListener('mousemove', onMove);
-        svg.addEventListener('touchmove', onMove, { passive: false });
-      }
-    }
+}
   }
 
   // -----------------------------
