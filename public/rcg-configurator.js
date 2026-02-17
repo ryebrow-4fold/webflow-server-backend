@@ -610,6 +610,63 @@ const STEP_INSTRUCTIONS = {
 
     padding-bottom: calc(12px + env(safe-area-inset-bottom));
   }
+
+  /* Make panel padding 0; move padding into step bodies */
+.rcg-panel{
+  padding: 0 !important;
+}
+
+/* Each step gets the padding instead */
+.rcg-step{
+  padding: 12px;
+}
+
+/* Header bar flush + yellow */
+.rcg-panel-handle{
+  margin: 0 !important;
+  border: 0 !important;
+  background: var(--rcg-yellow) !important;
+  padding: 0 !important;              /* no padding on the bar itself */
+}
+
+/* Add padding to inner groups so bar still feels spaced, while bg is flush */
+.rcg-pane-left,
+.rcg-pane-actions{
+  padding: 10px 12px;
+}
+
+/* Step label + meta black */
+#rcg-pane-label,
+#rcg-pane-meta,
+.rcg-panel-handle .step{
+  color: #000 !important;
+}
+
+/* Back button: white outline + white caret */
+#rcg-back{
+  border: 2px solid #fff !important;
+  background: transparent !important;
+}
+#rcg-back span{
+  color:#fff !important;
+}
+
+/* Next button: white bg + black text */
+#rcg-next{
+  background: #fff !important;
+  color: #000 !important;
+  border: 2px solid #fff !important;
+}
+
+/* Disabled state for Next */
+#rcg-next[disabled]{
+  opacity: 0.55 !important;
+}
+
+/* Optional: make Back also fade when hidden (visibility hidden keeps layout) */
+#rcg-back[style*="hidden"]{
+  opacity: 0.0;
+}
 }
     </style>
 
@@ -695,16 +752,7 @@ const STEP_INSTRUCTIONS = {
   </div>
 
   <!-- Optional radio (kept, but Next never blocked) -->
-  <div class="rcg-row" id="rcg-polish-choice" style="margin:10px 0 6px 0">
-    <label style="display:flex;align-items:center;gap:6px">
-      <input type="radio" name="rcg-polish" value="select" checked>
-      Select polished edges
-    </label>
-    <label style="display:flex;align-items:center;gap:6px">
-      <input type="radio" name="rcg-polish" value="none">
-      No edges polished
-    </label>
-  </div>
+  
 
   <!-- Backsplash checkbox LEFT of text -->
   <label class="rcg-row rcg-checkrow" style="margin-top:6px;align-items:center;gap:10px;cursor:pointer">
@@ -730,7 +778,7 @@ const STEP_INSTRUCTIONS = {
                 <div class="rcg-sub">Sinks must be ≥ ${MIN_SINK_EDGE}" from edges and ≥ ${MIN_SINK_GAP}" from each other. Drag sinks in the preview.</div>
               </div>
 
-              <div id="rcg-nonrect-note" class="rcg-sub">Sink placement is available for rectangles only.</div>
+              <div id="rcg-nonrect-note" class="rcg-sub rcg-hidden">Sink placement is available for rectangles only.</div>
             </div>
 
             <div id="rcg-step4" class="rcg-step rcg-hidden">
@@ -829,12 +877,17 @@ const STEP_INSTRUCTIONS = {
   area: 0,
   activeIcon: 'square',
   backsplash: false,
-  polishMode: 'select',
 
   // UI helpers
   hoverEdge: null,
   step2Initialized: false
 };
+
+function renderCurrentStepUI() {
+  // Safety: if stepId is invalid, snap to first in order
+  if (!state.stepOrder.includes(state.stepId)) state.stepId = state.stepOrder[0];
+  showStepId(state.stepId);
+}
 
 function initStep2DefaultsIfNeeded() {
   if (state.shape !== 'rectangle') return;
@@ -856,16 +909,8 @@ function updateEdgeStatusUI() {
   const sub   = el('#rcg-edge-status-sub', appRoot);
   if (!title || !sub) return;
 
-  const count = state.edges.length;
-
-  if (state.polishMode === 'none') {
-    title.textContent = 'No edges polished';
-    sub.textContent = 'All edges will be not-polished.';
-    return;
-  }
-
-  if (count === 0) {
-    title.textContent = 'No edges polished';
+  if (state.edges.length === 0) {
+    title.textContent = 'No polished edges selected';
     sub.textContent = 'Tap an edge to mark it polished.';
   } else {
     title.textContent = 'Polished edges selected';
@@ -1081,23 +1126,18 @@ function maybeShowEdgeCallout() {
     if (state.shape === 'rectangle') {
       const ex = bbox.x, ey = bbox.y, ew = bbox.width, eh = bbox.height;
       const band = isMobile()
-  ? Math.max(34, Math.min(62, Math.min(ew, eh) * 0.20))
-  : Math.max(18, Math.min(36, Math.min(ew, eh) * 0.14));
+  ? Math.max(44, Math.min(84, Math.min(ew, eh) * 0.26))
+  : Math.max(28, Math.min(64, Math.min(ew, eh) * 0.20));
 
       function drawEdge(x1, y1, x2, y2, key) {
   const active = state.edges.includes(key);
-  const hover = (state.hoverEdge === key);
 
   const seg = document.createElementNS(ns, 'line');
   seg.setAttribute('x1', x1); seg.setAttribute('y1', y1);
   seg.setAttribute('x2', x2); seg.setAttribute('y2', y2);
 
-  // active -> yellow thick; hover -> slightly thicker (even if not active)
   seg.setAttribute('stroke', active ? 'var(--rcg-yellow)' : '#111');
-
-  let w = active ? (isMobile() ? 8 : 6) : 2;
-  if (hover) w = Math.max(w, isMobile() ? 6 : 4);
-  seg.setAttribute('stroke-width', String(w));
+  seg.setAttribute('stroke-width', active ? (isMobile()? '8':'6') : '2');
 
   edgesG.appendChild(seg);
 }
@@ -1123,31 +1163,19 @@ function maybeShowEdgeCallout() {
     r.setAttribute('pointer-events', 'all');
     r.style.cursor = 'pointer';
 
-    r.addEventListener('pointerenter', () => {
-      state.hoverEdge = z.key;
-      drawShape();
-      pulseEdgeStatus();
-    });
-    r.addEventListener('pointerleave', () => {
-      state.hoverEdge = null;
-      drawShape();
-    });
-
-    r.addEventListener('click', () => {
-      if (state.polishMode === 'none') {
-        // if user toggles edges while in "none", automatically switch to select mode
-        state.polishMode = 'select';
-        const radios = els('input[name="rcg-polish"]', appRoot);
-        radios.forEach(rr => rr.checked = (rr.value === 'select'));
-      }
+    // Make it work reliably on desktop & mobile
+    r.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
 
       const i = state.edges.indexOf(z.key);
       if (i > -1) state.edges.splice(i, 1);
       else state.edges.push(z.key);
 
       updateEdgeStatusUI();
+      pulseEdgeStatus();
+
       drawShape();
-      updateNav(); // Next never blocked; still updates UI
+      updateNav();
     });
 
     hotG.appendChild(r);
@@ -1369,6 +1397,19 @@ function showStepId(stepId) {
   syncMobilePreviewInset();
 }
 
+function updateStepHints() {
+  const isRect = state.shape === 'rectangle';
+
+  const sinksBlock = el('#rcg-sinks-block', appRoot);
+  const note = el('#rcg-nonrect-note', appRoot);
+
+  // Only relevant on step 3
+  const onStep3 = (state.stepId === 3);
+
+  if (sinksBlock) sinksBlock.classList.toggle('rcg-hidden', !(onStep3 && isRect));
+  if (note) note.classList.toggle('rcg-hidden', !(onStep3 && !isRect));
+}
+
 function gotoNext() {
   const idx = stepIndex();
   if (idx >= stepTotal() - 1) return;
@@ -1428,16 +1469,6 @@ if (nextBtn) nextBtn.addEventListener('click', async () => {
 
   gotoNext();
 });
-
-  els('input[name="rcg-polish"]', appRoot).forEach(r => r.addEventListener('change', () => {
-  state.polishMode = r.value;
-
-  if (state.polishMode === 'none') state.edges = [];
-
-  drawShape();
-  updateEdgeStatusUI();
-  updateNav();
-}));
 
   const backsplashToggle = el('#rcg-backsplash', appRoot);
   if (backsplashToggle) backsplashToggle.addEventListener('change', () => {
@@ -1521,22 +1552,20 @@ if (nextBtn) nextBtn.addEventListener('click', async () => {
   state.edges = [];
   state.backsplash = false;
 
-  // circle/polygon: edges polished by default, but we omit Step 2 entirely
-  state.polishMode = 'select';
-
-  // reset step2 init so rectangle gets the 3-edge default
+  // rectangle step 2 will apply 3-edge default on entry
   state.step2Initialized = false;
   state.hoverEdge = null;
 
-  // build dynamic step order
+  // dynamic step order
   state.stepOrder = getStepOrder();
+  state.stepId = 1;
 
   els('[data-icon]', appRoot).forEach(b => b.classList.toggle('active', b.dataset.icon === icon));
-  buildDimInputs();
-  updateStepHints();
 
-  // Always return to Step 1 of the new flow
-  showStepId(1);
+  buildDimInputs();   // sets dim inputs + calls readDims()
+  drawShape();        // immediate redraw (fixes “only changes after editing dims”)
+
+  renderCurrentStepUI();
 }
 
   // -----------------------------
@@ -1739,7 +1768,7 @@ pos = {
       dims: state.dims,
       sinks: state.shape === 'rectangle' ? state.sinks : [],
       color: state.color,
-      edges: (state.shape === 'rectangle' && state.polishMode === 'select') ? state.edges : [],
+      edges: (state.shape === 'rectangle') ? state.edges : [],
       backsplash: state.shape === 'rectangle' ? !!state.backsplash : false,
       zip: zip,
       pricing: {
@@ -1986,15 +2015,17 @@ pos = {
   setHandleMode();
   window.addEventListener('resize', () => { setHandleMode(); syncMobilePreviewInset(); syncMode(); });
 
-  setShapeFromIcon('square');
-  refreshSinkPills();
-  state.stepOrder = getStepOrder();
-showStepId(1);
+  setShapeFromIcon('square');   // this sets shape + stepOrder
+refreshSinkPills();
 
-  syncMobilePreviewInset();
-  syncMode();
-  
-  appRoot.addEventListener('input', (e) => {
+// Force a guaranteed first render (fixes header/back visibility on load)
+renderCurrentStepUI();
+
+syncMobilePreviewInset();
+syncMode();
+
+// Ensure nav updates when ZIP changes (even if element is recreated / step toggles)
+appRoot.addEventListener('input', (e) => {
   if (e.target && e.target.id === 'rcg-zip') updateNav();
 });
 })();
