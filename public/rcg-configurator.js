@@ -1188,7 +1188,7 @@ function maybeShowEdgeCallout() {
   drawGrid();
 
   function getScale() {
-    const pad = 40;
+const pad = isMobile() ? 20 : 18;
     const maxW = 1400 - pad * 2;
     const maxH = 600 - pad * 2;
 
@@ -1197,7 +1197,7 @@ function maybeShowEdgeCallout() {
     if (state.shape === 'circle')    { const d = state.dims.D || 30; widthIn = d; heightIn = d; }
     if (state.shape === 'polygon')   { const n = state.dims.n || 6; const A = state.dims.A || 12; const diam = polyCircumDiam(n, A); widthIn = diam; heightIn = diam; }
 
-    const s = Math.min(maxW / widthIn, maxH / heightIn) * 0.95;
+const s = Math.min(maxW / widthIn, maxH / heightIn) * 0.995;
     const wpx = widthIn * s, hpx = heightIn * s;
     const remX = 1400 - wpx;
     const remY = 600 - hpx;
@@ -1207,22 +1207,29 @@ function maybeShowEdgeCallout() {
     return { s, cx, cy, widthIn, heightIn };
   }
 
-  function dimText(txt, x, y) {
+  function dimText(text, x, y, anchor = 'middle') {
   const t = document.createElementNS(ns, 'text');
-  t.textContent = txt;
+  t.textContent = text;
   t.setAttribute('x', x);
   t.setAttribute('y', y);
-  t.setAttribute('text-anchor', 'middle');
-  t.setAttribute('dominant-baseline', 'middle');
 
   const mobile = isMobile();
-  t.setAttribute('font-size', mobile ? '20' : '14');
+  const fontSize = mobile ? 30 : 18;
+  const strokeW  = mobile ? 7 : 4;
+
+  t.setAttribute('font-size', String(fontSize));
+  t.setAttribute('dominant-baseline', 'middle');
+  t.setAttribute('text-anchor', anchor);
   t.setAttribute('fill', '#111');
   t.setAttribute('stroke', '#fff');
-  t.setAttribute('stroke-width', mobile ? '4' : '3');
+  t.setAttribute('stroke-width', String(strokeW));
   t.setAttribute('paint-order', 'stroke');
-  sinkDimsG.appendChild(t);
+  t.setAttribute('pointer-events', 'none');
+
+  dimsG.appendChild(t);
 }
+
+
 
 function dimLine(x1, y1, x2, y2) {
   const l = document.createElementNS(ns, 'line');
@@ -1243,24 +1250,26 @@ function tick(x1, y1, x2, y2) {
 }
 
   function label(text, x, y) {
-    const t = document.createElementNS(ns, 'text');
-    t.textContent = text;
-    t.setAttribute('x', x);
-    t.setAttribute('y', y);
+  const t = document.createElementNS(ns, 'text');
+  t.textContent = text;
+  t.setAttribute('x', x);
+  t.setAttribute('y', y);
 
-    const mobile = isMobile();
-    const fontSize = mobile ? 30 : 16;
-    const strokeW  = mobile ? 5 : 3;
+  const mobile = isMobile();
 
-    t.setAttribute('font-size', String(fontSize));
-    t.setAttribute('dominant-baseline', 'middle');
-    t.setAttribute('text-anchor', 'middle');
-    t.setAttribute('fill', '#111');
-    t.setAttribute('stroke', '#fff');
-    t.setAttribute('stroke-width', String(strokeW));
-    t.setAttribute('paint-order', 'stroke');
-    dimsG.appendChild(t);
-  }
+  // ⬆️ bigger labels
+  const fontSize = mobile ? 38 : 22;
+  const strokeW  = mobile ? 7 : 4;
+
+  t.setAttribute('font-size', String(fontSize));
+  t.setAttribute('dominant-baseline', 'middle');
+  t.setAttribute('text-anchor', 'middle');
+  t.setAttribute('fill', '#111');
+  t.setAttribute('stroke', '#fff');
+  t.setAttribute('stroke-width', String(strokeW));
+  t.setAttribute('paint-order', 'stroke');
+  dimsG.appendChild(t);
+}
 
   // ---- sink drag global state for smooth mobile dragging ----
   let activeSinkDrag = null;
@@ -1499,7 +1508,7 @@ if (state.stepId === 3) {
     dimLine(x, sinkBottom, x, pieceBottom);
     tick(x - 6, sinkBottom, x + 6, sinkBottom);
     tick(x - 6, pieceBottom, x + 6, pieceBottom);
-    dimText(`${fmt2(bottomClrIn)}"`, x + (isMobile() ? 20 : 14), (sinkBottom + pieceBottom) / 2);
+dimText(`${fmt2(bottomClrIn)}"`, x + (isMobile() ? 34 : 22), (sinkBottom + pieceBottom) / 2, 'start');
   }
 }
 
