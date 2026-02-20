@@ -77,6 +77,16 @@ const STEP_INSTRUCTIONS = {
     { key: "kairos",  name: "Kairos",  url: "https://assetstools.cosentino.com/api/v1/bynder/color/KKC/detalle/KKC-thumb.jpg?w=988&h=868&q=80,format&fit=crop&auto=format" }
   ];
 
+const COLOR_PAGES = {
+  laurent: 'https://www.rockcreekgranite.com/colors/laurent',
+  rem:     'https://www.rockcreekgranite.com/colors/rem',
+  bergen:  'https://www.rockcreekgranite.com/colors/bergen',
+  kreta:   'https://www.rockcreekgranite.com/colors/kreta',
+  sirius:  'https://www.rockcreekgranite.com/colors/sirius',
+  kairos:  'https://www.rockcreekgranite.com/colors/kairos'
+};
+
+
   const SINK_TEMPLATES = {
     'bath-oval':    { label: 'Bath Oval (17×14)',          w: 17, h: 14, shape: 'oval' },
     'bath-rect':    { label: 'Bath Rectangle (18×13)',     w: 18, h: 13, shape: 'rect' },
@@ -148,6 +158,29 @@ const STEP_INSTRUCTIONS = {
 
       .rcg-inline-host{ width:100%; position:relative; }
 
+      /* Step 4: title + dynamic color link */
+.rcg-step4-title{
+  justify-content: space-between;
+  width: 100%;
+  gap: 10px;
+}
+#rcg-color-link{
+  font-size: 13px;
+  font-weight: 900;
+  color: #111;
+  text-decoration: underline;
+  white-space: nowrap;
+}
+
+@media (max-width: 980px){
+  .rcg-step4-title{
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  #rcg-color-link{ margin-top: 4px; }
+}
+
+
 #rcg-back{
   display: inline-flex !important;
   align-items:center;
@@ -210,6 +243,22 @@ const STEP_INSTRUCTIONS = {
         flex-direction: column;
         overflow: hidden;
       }
+
+@media (max-width: 980px){
+  #rcg-instr-4 { display:block; }
+  #rcg-color-link{
+    display:block;
+    margin-top:6px;
+  }
+}
+@media (min-width: 981px){
+  #rcg-color-link{
+    display:inline-block;
+    margin-left:12px;
+    white-space:nowrap;
+  }
+}
+
 
       /* Mobile topbar: true 3-column layout */
 @media (max-width: 980px){
@@ -885,7 +934,13 @@ const STEP_INSTRUCTIONS = {
             </div>
 
             <div id="rcg-step4" class="rcg-step rcg-hidden">
-            <div class="rcg-title" id="rcg-instr-4"></div>
+            <div class="rcg-title" style="justify-content:space-between; width:100%">
+  <span id="rcg-instr-4"></span>
+  <a id="rcg-color-link" href="#" target="_blank" rel="noopener" style="font-size:13px;font-weight:900;color:#111;text-decoration:underline">
+    See it up close
+  </a>
+</div>
+
             
             <!-- Desktop: stone + ZIP same row; Mobile will wrap naturally -->
             <div class="rcg-row" id="rcg-stone-zip-row" style="margin-bottom:10px; width:100%">
@@ -951,6 +1006,19 @@ const STEP_INSTRUCTIONS = {
     document.body.style.overflow = '';
   }
 
+  function updateColorLink() {
+  const a = el('#rcg-color-link', appRoot);
+  if (!a) return;
+
+  const key = state.color || DEFAULT_COLOR;
+  const href = COLOR_PAGES[key] || COLOR_PAGES[DEFAULT_COLOR] || '#';
+  a.href = href;
+
+  // If you ever don't have a page for a color, hide the link:
+  a.style.display = (href === '#') ? 'none' : '';
+}
+
+
   // Desktop default: inline
   attachAppToDesktop();
 
@@ -985,6 +1053,17 @@ const STEP_INSTRUCTIONS = {
   hoverEdge: null,
   step2Initialized: false
 };
+
+function updateColorLink() {
+  const a = el('#rcg-color-link', appRoot);
+  if (!a) return;
+
+  const key = state.color || DEFAULT_COLOR;
+  const href = COLOR_PAGES[key] || COLOR_PAGES[DEFAULT_COLOR] || '#';
+
+  a.href = href;
+  a.style.display = (href === '#') ? 'none' : '';
+}
 
 function renderCurrentStepUI() {
   // Safety: if stepId is invalid, snap to first in order
@@ -1081,10 +1160,13 @@ function maybeShowEdgeCallout() {
   const dimsG  = document.createElementNS(ns, 'g');
   const edgesG = document.createElementNS(ns, 'g');
   const hotG   = document.createElementNS(ns, 'g');
+  const sinkDimsG = document.createElementNS(ns, 'g');
+
 
   defs.appendChild(clip);
-  svg.append(defs, gridG, imageG, shapeG, sinksG, edgesG, hotG, dimsG);
+  svg.append(defs, gridG, imageG, shapeG, sinksG, sinkDimsG, edgesG, hotG, dimsG);
   dimsG.setAttribute('pointer-events', 'none');
+  sinkDimsG.setAttribute('pointer-events', 'none');
 
   function drawGrid() {
     gridG.innerHTML = '';
@@ -1125,6 +1207,41 @@ function maybeShowEdgeCallout() {
     return { s, cx, cy, widthIn, heightIn };
   }
 
+  function dimText(txt, x, y) {
+  const t = document.createElementNS(ns, 'text');
+  t.textContent = txt;
+  t.setAttribute('x', x);
+  t.setAttribute('y', y);
+  t.setAttribute('text-anchor', 'middle');
+  t.setAttribute('dominant-baseline', 'middle');
+
+  const mobile = isMobile();
+  t.setAttribute('font-size', mobile ? '20' : '14');
+  t.setAttribute('fill', '#111');
+  t.setAttribute('stroke', '#fff');
+  t.setAttribute('stroke-width', mobile ? '4' : '3');
+  t.setAttribute('paint-order', 'stroke');
+  sinkDimsG.appendChild(t);
+}
+
+function dimLine(x1, y1, x2, y2) {
+  const l = document.createElementNS(ns, 'line');
+  l.setAttribute('x1', x1); l.setAttribute('y1', y1);
+  l.setAttribute('x2', x2); l.setAttribute('y2', y2);
+  l.setAttribute('stroke', '#111');
+  l.setAttribute('stroke-width', isMobile() ? '3' : '2');
+  sinkDimsG.appendChild(l);
+}
+
+function tick(x1, y1, x2, y2) {
+  const l = document.createElementNS(ns, 'line');
+  l.setAttribute('x1', x1); l.setAttribute('y1', y1);
+  l.setAttribute('x2', x2); l.setAttribute('y2', y2);
+  l.setAttribute('stroke', '#111');
+  l.setAttribute('stroke-width', isMobile() ? '3' : '2');
+  sinkDimsG.appendChild(l);
+}
+
   function label(text, x, y) {
     const t = document.createElementNS(ns, 'text');
     t.textContent = text;
@@ -1163,8 +1280,9 @@ function maybeShowEdgeCallout() {
   window.addEventListener('touchend', cancelSinkDrag);
 
   function drawShape() {
-    imageG.innerHTML = ''; shapeG.innerHTML = ''; edgesG.innerHTML = '';
-    dimsG.innerHTML = ''; sinksG.innerHTML = ''; hotG.innerHTML = '';
+    sinkDimsG.innerHTML = ''; imageG.innerHTML = ''; shapeG.innerHTML = ''; edgesG.innerHTML = '';
+    dimsG.innerHTML = ''; sinksG.innerHTML = ''; hotG.innerHTML = ''; 
+
 
     const { s, cx, cy, widthIn, heightIn } = getScale();
     let pathEl;
@@ -1336,6 +1454,56 @@ node.style.cursor = 'grab';
 node.style.touchAction = 'none';
 sinksG.appendChild(node);
 
+// --- Sink clearance dimensions (Step 3 only) ---
+if (state.stepId === 3) {
+  const L = state.dims.L;
+  const W = state.dims.W;
+
+  // inches clearances
+  const leftClrIn   = (snk.x - halfW);
+  const rightClrIn  = (L - (snk.x + halfW));
+  const bottomClrIn = (W - (snk.y + halfH));
+
+  // px endpoints
+  const pieceLeft   = rectX;
+  const pieceRight  = rectX + bbox.width;
+  const pieceBottom = rectY + bbox.height;
+
+  const sinkRight = sinkLeft + sinkWpx;
+  const sinkBottom = sinkTop + sinkHpx;
+
+  // Keep labels offset from sink a bit
+  const off = isMobile() ? 18 : 12;
+
+  // 1) Left clearance (horizontal line, under sink)
+  {
+    const y = sinkBottom + off;
+    dimLine(pieceLeft, y, sinkLeft, y);
+    tick(pieceLeft, y - 6, pieceLeft, y + 6);
+    tick(sinkLeft, y - 6, sinkLeft, y + 6);
+    dimText(`${fmt2(leftClrIn)}"`, (pieceLeft + sinkLeft) / 2, y - (isMobile() ? 18 : 12));
+  }
+
+  // 2) Right clearance (horizontal line, under sink)
+  {
+    const y = sinkBottom + off;
+    dimLine(sinkRight, y, pieceRight, y);
+    tick(sinkRight, y - 6, sinkRight, y + 6);
+    tick(pieceRight, y - 6, pieceRight, y + 6);
+    dimText(`${fmt2(rightClrIn)}"`, (sinkRight + pieceRight) / 2, y - (isMobile() ? 18 : 12));
+  }
+
+  // 3) Bottom clearance (vertical line, right of sink)
+  {
+    const x = sinkRight + (isMobile() ? 22 : 14);
+    dimLine(x, sinkBottom, x, pieceBottom);
+    tick(x - 6, sinkBottom, x + 6, sinkBottom);
+    tick(x - 6, pieceBottom, x + 6, pieceBottom);
+    dimText(`${fmt2(bottomClrIn)}"`, x + (isMobile() ? 20 : 14), (sinkBottom + pieceBottom) / 2);
+  }
+}
+
+
         // Faucet holes preview (always computed from sink position)
         const holeR = toPx(1.25 / 2);
         const centerX = sinkLeft + sinkWpx / 2;
@@ -1479,6 +1647,8 @@ function stepIndex() { return Math.max(0, state.stepOrder.indexOf(state.stepId))
 
 function showStepId(stepId) {
   state.stepId = stepId;
+  if (stepId === 4) updateColorLink();
+
 
   // Show only the requested step panel
   els('.rcg-step', appRoot).forEach(s => s.classList.add('rcg-hidden'));
@@ -1595,9 +1765,17 @@ if (nextBtn) nextBtn.addEventListener('click', async () => {
 
   const colorSel = el('#rcg-color', appRoot);
   if (colorSel) {
-    colorSel.value = DEFAULT_COLOR;
-    colorSel.addEventListener('change', () => { state.color = colorSel.value; drawShape(); });
-  }
+  colorSel.value = DEFAULT_COLOR;
+  state.color = DEFAULT_COLOR;
+  updateColorLink();
+
+  colorSel.addEventListener('change', () => {
+    state.color = colorSel.value;
+    updateColorLink();
+    drawShape();
+  });
+}
+
 
   // -----------------------------
   // Step 1 dim inputs
@@ -2134,22 +2312,31 @@ pos = {
   // -----------------------------
   // Init
   // -----------------------------
+  function bootstrap(){
   renderShapeIcons(el('#shape-icons', appRoot));
   setHandleMode();
+
+  setShapeFromIcon('square');
+  refreshSinkPills();
+  renderCurrentStepUI();
+
+  syncMobilePreviewInset();
+  syncMode();
+
   window.addEventListener('resize', () => { setHandleMode(); syncMobilePreviewInset(); syncMode(); });
 
-  setShapeFromIcon('square');   // this sets shape + stepOrder
-refreshSinkPills();
+  appRoot.addEventListener('input', (e) => {
+    if (e.target && e.target.id === 'rcg-zip') updateNav();
+  });
+}
 
-// Force a guaranteed first render (fixes header/back visibility on load)
-renderCurrentStepUI();
-
-syncMobilePreviewInset();
-syncMode();
-
-// Ensure nav updates when ZIP changes (even if element is recreated / step toggles)
-appRoot.addEventListener('input', (e) => {
-  if (e.target && e.target.id === 'rcg-zip') updateNav();
+// let the page paint first
+requestAnimationFrame(() => {
+  if ('requestIdleCallback' in window) {
+    requestIdleCallback(bootstrap, { timeout: 800 });
+  } else {
+    setTimeout(bootstrap, 0);
+  }
 });
 })();
 
