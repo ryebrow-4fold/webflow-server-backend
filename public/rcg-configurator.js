@@ -158,6 +158,33 @@ const COLOR_PAGES = {
 
       .rcg-inline-host{ width:100%; position:relative; }
 
+      .rcg-step .rcg-title{ margin-top: 6px; margin-bottom: 4px; }
+
+      #rcg-next, #rcg-back{
+  height: 44px;
+}
+#rcg-next{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+}
+
+#rcg-add-sink{ height:44px; padding:0 14px; display:inline-flex; align-items:center; justify-content:center; }
+#rcg-sink-select{ height:44px; }
+
+#rcg-color-link{
+  text-decoration: none;
+  color:#111;
+  font-weight:900;
+  font-size:13px;
+}
+#rcg-color-link span{ margin-left:6px; }
+.rcg-step4-title{
+  justify-content:flex-start;
+  gap:10px;
+  flex-wrap:wrap;
+}
+
       /* Step 4: title + dynamic color link */
 .rcg-step4-title{
   justify-content: space-between;
@@ -178,6 +205,27 @@ const COLOR_PAGES = {
     align-items: flex-start;
   }
   #rcg-color-link{ margin-top: 4px; }
+}
+
+@media (max-width: 980px){
+  .rcg-step{ animation: rcgSlideIn .18s ease-out; }
+  @keyframes rcgSlideIn{
+    from{ transform: translateX(14px); opacity: 0; }
+    to{ transform: translateX(0); opacity: 1; }
+  }
+}
+
+.rcg-stepperwrap{ display:flex; align-items:center; gap:6px; }
+.rcg-stepper{
+  height:44px;
+  width:44px;
+  border:1px solid #000;
+  background:#fff;
+  font-weight:900;
+  cursor:pointer;
+}
+@media (min-width: 981px){
+  .rcg-stepper{ display:none; }
 }
 
 
@@ -912,7 +960,7 @@ const COLOR_PAGES = {
     <span class="rcg-label">Add 4" Backsplash</span>
   </label>
 
-  <div class="rcg-sub">Backsplash applies to all not-polished sides.</div>
+<div class="rcg-sub" id="rcg-backsplash-note">Backsplash applies to all not-polished sides.</div>
 </div>
 
             <div id="rcg-step3" class="rcg-step rcg-hidden">
@@ -937,8 +985,7 @@ const COLOR_PAGES = {
             <div class="rcg-title" style="justify-content:space-between; width:100%">
   <span id="rcg-instr-4"></span>
   <a id="rcg-color-link" href="#" target="_blank" rel="noopener" style="font-size:13px;font-weight:900;color:#111;text-decoration:underline">
-    See it up close
-  </a>
+    See it up close<span aria-hidden="true">›</span></a>
 </div>
 
             
@@ -1053,6 +1100,32 @@ const COLOR_PAGES = {
   hoverEdge: null,
   step2Initialized: false
 };
+
+function updateBacksplashAvailability() {
+  if (state.shape !== 'rectangle') return;
+
+  const cb = el('#rcg-backsplash', appRoot);
+  if (!cb) return;
+
+  const all = ['top','right','bottom','left'].every(k => state.edges.includes(k));
+
+  if (all) {
+    cb.checked = false;
+    cb.disabled = true;
+    state.backsplash = false;
+  } else {
+    cb.disabled = false;
+  }
+
+  // Optional: update helper text if you want
+  const note = el('#rcg-backsplash-note', appRoot);
+  if (note) {
+    note.textContent = all
+      ? 'Backsplash is available only on not-polished sides. Unselect an edge to enable.'
+      : 'Backsplash applies to all not-polished sides.';
+  }
+}
+
 
 function updateColorLink() {
   const a = el('#rcg-color-link', appRoot);
@@ -1169,23 +1242,35 @@ function maybeShowEdgeCallout() {
   sinkDimsG.setAttribute('pointer-events', 'none');
 
   function drawGrid() {
-    gridG.innerHTML = '';
-    for (let x = 0; x <= 1400; x += 40) {
-      const l = document.createElementNS(ns, 'line');
-      l.setAttribute('x1', x); l.setAttribute('y1', 0);
-      l.setAttribute('x2', x); l.setAttribute('y2', 600);
-      l.setAttribute('stroke', 'black'); l.setAttribute('stroke-width', '1');
-      gridG.appendChild(l);
-    }
-    for (let y = 0; y <= 600; y += 40) {
-      const l = document.createElementNS(ns, 'line');
-      l.setAttribute('x1', 0); l.setAttribute('y1', y);
-      l.setAttribute('x2', 1400); l.setAttribute('y2', y);
-      l.setAttribute('stroke', 'black'); l.setAttribute('stroke-width', '1');
-      gridG.appendChild(l);
-    }
-  }
-  drawGrid();
+  gridG.innerHTML = '';
+
+  const pat = document.createElementNS(ns, 'pattern');
+  pat.setAttribute('id', 'rcgGridPattern');
+  pat.setAttribute('width', '40');
+  pat.setAttribute('height', '40');
+  pat.setAttribute('patternUnits', 'userSpaceOnUse');
+
+  const h = document.createElementNS(ns, 'line');
+  h.setAttribute('x1', '0'); h.setAttribute('y1', '0');
+  h.setAttribute('x2', '40'); h.setAttribute('y2', '0');
+  h.setAttribute('stroke', '#000'); h.setAttribute('stroke-width', '1');
+
+  const v = document.createElementNS(ns, 'line');
+  v.setAttribute('x1', '0'); v.setAttribute('y1', '0');
+  v.setAttribute('x2', '0'); v.setAttribute('y2', '40');
+  v.setAttribute('stroke', '#000'); v.setAttribute('stroke-width', '1');
+
+  pat.append(h, v);
+  defs.appendChild(pat);
+
+  const bg = document.createElementNS(ns, 'rect');
+  bg.setAttribute('x', '0'); bg.setAttribute('y', '0');
+  bg.setAttribute('width', '1400'); bg.setAttribute('height', '600');
+  bg.setAttribute('fill', 'url(#rcgGridPattern)');
+  gridG.setAttribute('opacity', '0.08');
+  gridG.appendChild(bg);
+}
+drawGrid();
 
   function getScale() {
 const pad = isMobile() ? 20 : 18;
@@ -1203,8 +1288,13 @@ const s = Math.min(maxW / widthIn, maxH / heightIn) * 0.995;
     const remY = 600 - hpx;
 
     const cx = remX * 0.5;
-    const cy = remY * 0.5;
-    return { s, cx, cy, widthIn, heightIn };
+let cy = remY * 0.5;
+
+// keep a minimum top/bottom breathing room (esp. desktop)
+const minY = isMobile() ? 16 : 24;
+cy = Math.max(minY, cy);
+
+return { s, cx, cy, widthIn, heightIn };
   }
 
   function dimText(text, x, y, anchor = 'middle') {
@@ -1254,6 +1344,7 @@ function tick(x1, y1, x2, y2) {
   t.textContent = text;
   t.setAttribute('x', x);
   t.setAttribute('y', y);
+  t.setAttribute('font-weight', '900');
 
   const mobile = isMobile();
 
@@ -1399,10 +1490,10 @@ function tick(x1, y1, x2, y2) {
       else state.edges.push(z.key);
 
       updateEdgeStatusUI();
-      pulseEdgeStatus();
-
-      drawShape();
-      updateNav();
+pulseEdgeStatus();
+updateBacksplashAvailability();
+drawShape();
+updateNav();
     });
 
     hotG.appendChild(r);
@@ -1412,8 +1503,11 @@ function tick(x1, y1, x2, y2) {
     }
 
     if (state.shape === 'rectangle') {
-      label(`${fmt2(state.dims.L || 0)}" (L)`, bbox.x + bbox.width / 2, Math.max(28, bbox.y - 20));
-      label(`${fmt2(state.dims.W || 0)}" (W)`, Math.max(36, bbox.x - 40), bbox.y + bbox.height / 2);
+      const inset = isMobile() ? 26 : 18;
+label(`${fmt2(state.dims.L || 0)}" (L)`, bbox.x + bbox.width / 2, bbox.y + inset);
+label(`${fmt2(state.dims.W || 0)}" (W)`, bbox.x + inset, bbox.y + bbox.height / 2);
+
+
     } else if (state.shape === 'circle') {
       label(`${fmt2(state.dims.D || 0)}" Ø`, bbox.x + bbox.width / 2, Math.max(28, bbox.y - 20));
     } else if (state.shape === 'polygon') {
@@ -1454,14 +1548,58 @@ function tick(x1, y1, x2, y2) {
           node.setAttribute('rx', '4');
         }
         // Reliable SVG hit-area: use fill + fill-opacity instead of rgba()
-node.setAttribute('fill', '#fff');
-node.setAttribute('fill-opacity', '0.01'); // invisible but clickable
-node.setAttribute('stroke', '#d00');
-node.setAttribute('stroke-width', isMobile() ? '3' : '2');
+const onStep3 = (state.stepId === 3);
+const onStep4 = (state.stepId === 4);
+
+if (onStep3) {
+  node.setAttribute('fill', '#fff');
+  node.setAttribute('fill-opacity', '0.10');
+  node.setAttribute('stroke', 'var(--rcg-yellow)');
+  node.setAttribute('stroke-width', isMobile() ? '6' : '5');
+} else {
+  // checkout (and other steps): match faucet-hole style
+  node.setAttribute('fill', 'rgba(255,255,255,0.6)');
+  node.setAttribute('stroke', '#111');
+  node.setAttribute('stroke-width', isMobile() ? '3' : '2');
+}
 node.setAttribute('pointer-events', 'all');
 node.style.cursor = 'grab';
 node.style.touchAction = 'none';
 sinksG.appendChild(node);
+
+if (onStep3) {
+  const cxm = sinkLeft + sinkWpx / 2;
+  const cym = sinkTop + sinkHpx / 2;
+  const len = isMobile() ? 28 : 20;
+
+  const makeLine = (x1,y1,x2,y2) => {
+    const l = document.createElementNS(ns,'line');
+    l.setAttribute('x1',x1); l.setAttribute('y1',y1);
+    l.setAttribute('x2',x2); l.setAttribute('y2',y2);
+    l.setAttribute('stroke','#111');
+    l.setAttribute('stroke-width', isMobile() ? '3' : '2');
+    sinksG.appendChild(l);
+  };
+
+  // cross
+  makeLine(cxm - len, cym, cxm + len, cym);
+  makeLine(cxm, cym - len, cxm, cym + len);
+
+  // tiny arrow tips
+  const tip = isMobile() ? 8 : 6;
+  makeLine(cxm + len, cym, cxm + len - tip, cym - tip);
+  makeLine(cxm + len, cym, cxm + len - tip, cym + tip);
+
+  makeLine(cxm - len, cym, cxm - len + tip, cym - tip);
+  makeLine(cxm - len, cym, cxm - len + tip, cym + tip);
+
+  makeLine(cxm, cym - len, cxm - tip, cym - len + tip);
+  makeLine(cxm, cym - len, cxm + tip, cym - len + tip);
+
+  makeLine(cxm, cym + len, cxm - tip, cym + len - tip);
+  makeLine(cxm, cym + len, cxm + tip, cym + len - tip);
+}
+
 
 // --- Sink clearance dimensions (Step 3 only) ---
 if (state.stepId === 3) {
@@ -1480,6 +1618,8 @@ if (state.stepId === 3) {
 
   const sinkRight = sinkLeft + sinkWpx;
   const sinkBottom = sinkTop + sinkHpx;
+
+  
 
   // Keep labels offset from sink a bit
   const off = isMobile() ? 18 : 12;
@@ -1684,8 +1824,9 @@ function showStepId(stepId) {
   // Step-specific entry behaviors
   if (stepId === 2 && state.shape === 'rectangle') {
     initStep2DefaultsIfNeeded();
-    updateEdgeStatusUI();
-    maybeShowEdgeCallout();
+  updateEdgeStatusUI();
+  updateBacksplashAvailability();
+  maybeShowEdgeCallout();
   }
 
   drawShape();
@@ -1797,19 +1938,29 @@ if (nextBtn) nextBtn.addEventListener('click', async () => {
     }
 
     if (state.shape === 'rectangle') {
-      h.innerHTML = `
-        <label class="rcg-label">L (in)</label><input class="rcg-input" id="dim-L" type="number" step="0.125" min="1" max="${MAX_LEN}" value="36.00">
-        <label class="rcg-label">W (in)</label><input class="rcg-input" id="dim-W" type="number" step="0.125" min="1" max="${MAX_WID}" value="25.50">`;
-    } else if (state.shape === 'circle') {
-      h.innerHTML = `<label class="rcg-label">Diameter (in)</label><input class="rcg-input" id="dim-D" type="number" step="0.125" min="1" max="${MAX_DIAM}" value="30.00">`;
-    } else {
-      const n = clamp(state.dims.n || 6, 5, 18);
-      const sMax = (MAX_DIAM * Math.sin(Math.PI / n)).toFixed(2);
-      h.innerHTML = `
-        <label class="rcg-label">Sides</label><input class="rcg-input" id="dim-N" type="number" step="1" min="5" max="18" value="${n}">
-        <label class="rcg-label">Side (in)</label><input class="rcg-input" id="dim-A" type="number" step="0.125" min="1" max="${sMax}" value="${(state.dims.A || 12).toFixed(2)}">
-        <span class="rcg-sub">Max side ≈ ${sMax}" (to keep size ≤ ${MAX_DIAM}")</span>`;
-    }
+  const stepper = isMobile()
+    ? `<button class="rcg-stepper" data-stepper="-L" type="button">−</button>
+       <button class="rcg-stepper" data-stepper="+L" type="button">+</button>`
+    : '';
+
+  const stepperW = isMobile()
+    ? `<button class="rcg-stepper" data-stepper="-W" type="button">−</button>
+       <button class="rcg-stepper" data-stepper="+W" type="button">+</button>`
+    : '';
+
+  h.innerHTML = `
+    <label class="rcg-label">L (in)</label>
+    <div class="rcg-stepperwrap">
+      <input class="rcg-input" id="dim-L" type="number" step="0.125" min="1" max="${MAX_LEN}" value="36.00">
+      ${stepper}
+    </div>
+
+    <label class="rcg-label">W (in)</label>
+    <div class="rcg-stepperwrap">
+      <input class="rcg-input" id="dim-W" type="number" step="0.125" min="1" max="${MAX_WID}" value="25.50">
+      ${stepperW}
+    </div>`;
+}
 
     h.oninput = () => { readDims(); drawShape(); };
     h.onchange = () => {
@@ -1828,6 +1979,26 @@ if (nextBtn) nextBtn.addEventListener('click', async () => {
       }
       readDims(); drawShape();
     };
+    
+if (isMobile()) {
+  els('[data-stepper]', h).forEach(btn => {
+    btn.addEventListener('click', () => {
+      const code = btn.getAttribute('data-stepper'); // +L, -W, etc.
+      const dir = code[0] === '+' ? 1 : -1;
+      const which = code.slice(1); // L or W
+
+      const input = el(`#dim-${which}`, appRoot);
+      if (!input) return;
+
+      const cur = parseFloat(input.value || '0') || 0;
+      const next = cur + dir * 1.5;
+
+      input.value = fmt2(next);
+      readDims();
+      drawShape();
+    });
+  });
+}
 
     readDims();
   }
@@ -2339,7 +2510,7 @@ pos = {
   });
 }
 
-// let the page paint first
+// Let Webflow page paint first, then mount configurator
 requestAnimationFrame(() => {
   if ('requestIdleCallback' in window) {
     requestIdleCallback(bootstrap, { timeout: 800 });
@@ -2347,6 +2518,7 @@ requestAnimationFrame(() => {
     setTimeout(bootstrap, 0);
   }
 });
+
 })();
 
 
