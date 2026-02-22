@@ -215,10 +215,26 @@ const COLOR_PAGES = {
   }
 }
 
+/* Step 1 dims: stack rows on mobile */
+@media (max-width: 980px){
+  #rcg-dims{
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+    align-items:stretch;
+  }
+  .rcg-dimrow{
+    display:grid;
+    grid-template-columns: 70px 1fr auto auto;
+    gap:8px;
+    align-items:center;
+  }
+}
+
 .rcg-stepperwrap{ display:flex; align-items:center; gap:6px; }
 .rcg-stepper{
-  height:44px;
-  width:44px;
+  height:42px;
+  width:42px;
   border:1px solid #000;
   background:#fff;
   font-weight:900;
@@ -867,6 +883,22 @@ const COLOR_PAGES = {
   opacity: 0.5 !important;
 }
 
+/* Step 4 title row: left aligned, no underline */
+.rcg-step4-title{
+  justify-content: flex-start !important;
+  align-items: center !important;
+  gap: 10px !important;
+}
+#rcg-color-link{
+  text-decoration: none !important;
+  color:#111 !important;
+  font-weight: 900 !important;
+}
+#rcg-color-link:hover{
+  text-decoration: none !important;
+  opacity: 0.8;
+}
+
 
     </style>
 
@@ -1226,7 +1258,10 @@ function maybeShowEdgeCallout() {
   const clip = document.createElementNS(ns, 'clipPath');
   clip.setAttribute('id', 'rcgClip');
 
-  const gridG = document.createElementNS(ns, 'g'); gridG.setAttribute('opacity', '0.08');
+  const gridG = document.createElementNS(ns, 'g'); 
+  gridG.setAttribute('opacity', '0.12'); 
+  bg.setAttribute('width', '1400');
+  bg.setAttribute('height', '600');
   const imageG = document.createElementNS(ns, 'g');
   const shapeG = document.createElementNS(ns, 'g');
   const sinksG = document.createElementNS(ns, 'g');
@@ -1289,9 +1324,7 @@ const s = Math.min(maxW / widthIn, maxH / heightIn) * 0.995;
 
     const cx = remX * 0.5;
 let cy = remY * 0.5;
-
-// keep a minimum top/bottom breathing room (esp. desktop)
-const minY = isMobile() ? 16 : 24;
+const minY = isMobile() ? 16 : 48;   // ⬅️ bump from 24 to 48
 cy = Math.max(minY, cy);
 
 return { s, cx, cy, widthIn, heightIn };
@@ -1558,9 +1591,9 @@ if (onStep3) {
   node.setAttribute('stroke-width', isMobile() ? '6' : '5');
 } else {
   // checkout (and other steps): match faucet-hole style
-  node.setAttribute('fill', 'rgba(255,255,255,0.6)');
-  node.setAttribute('stroke', '#111');
-  node.setAttribute('stroke-width', isMobile() ? '3' : '2');
+  node.setAttribute('fill', 'none');
+node.setAttribute('stroke', '#111');
+node.setAttribute('stroke-width', isMobile() ? '3' : '2');
 }
 node.setAttribute('pointer-events', 'all');
 node.style.cursor = 'grab';
@@ -1937,29 +1970,30 @@ if (nextBtn) nextBtn.addEventListener('click', async () => {
       return;
     }
 
-    if (state.shape === 'rectangle') {
-  const stepper = isMobile()
-    ? `<button class="rcg-stepper" data-stepper="-L" type="button">−</button>
-       <button class="rcg-stepper" data-stepper="+L" type="button">+</button>`
-    : '';
+   if (state.shape === 'rectangle') {
+  if (isMobile()) {
+    h.innerHTML = `
+      <div class="rcg-dimrow">
+        <label class="rcg-label">L (in)</label>
+        <input class="rcg-input" id="dim-L" type="number" step="0.125" min="1" max="${MAX_LEN}" value="36.00">
+        <button class="rcg-stepper" data-stepper="-L" type="button">−</button>
+        <button class="rcg-stepper" data-stepper="+L" type="button">+</button>
+      </div>
 
-  const stepperW = isMobile()
-    ? `<button class="rcg-stepper" data-stepper="-W" type="button">−</button>
-       <button class="rcg-stepper" data-stepper="+W" type="button">+</button>`
-    : '';
-
-  h.innerHTML = `
-    <label class="rcg-label">L (in)</label>
-    <div class="rcg-stepperwrap">
-      <input class="rcg-input" id="dim-L" type="number" step="0.125" min="1" max="${MAX_LEN}" value="36.00">
-      ${stepper}
-    </div>
-
-    <label class="rcg-label">W (in)</label>
-    <div class="rcg-stepperwrap">
-      <input class="rcg-input" id="dim-W" type="number" step="0.125" min="1" max="${MAX_WID}" value="25.50">
-      ${stepperW}
-    </div>`;
+      <div class="rcg-dimrow">
+        <label class="rcg-label">W (in)</label>
+        <input class="rcg-input" id="dim-W" type="number" step="0.125" min="1" max="${MAX_WID}" value="25.50">
+        <button class="rcg-stepper" data-stepper="-W" type="button">−</button>
+        <button class="rcg-stepper" data-stepper="+W" type="button">+</button>
+      </div>
+    `;
+  } else {
+    // desktop: no steppers
+    h.innerHTML = `
+      <label class="rcg-label">L (in)</label><input class="rcg-input" id="dim-L" type="number" step="0.125" min="1" max="${MAX_LEN}" value="36.00">
+      <label class="rcg-label">W (in)</label><input class="rcg-input" id="dim-W" type="number" step="0.125" min="1" max="${MAX_WID}" value="25.50">
+    `;
+  }
 }
 
     h.oninput = () => { readDims(); drawShape(); };
@@ -1979,7 +2013,7 @@ if (nextBtn) nextBtn.addEventListener('click', async () => {
       }
       readDims(); drawShape();
     };
-    
+
 if (isMobile()) {
   els('[data-stepper]', h).forEach(btn => {
     btn.addEventListener('click', () => {
@@ -2002,6 +2036,28 @@ if (isMobile()) {
 
     readDims();
   }
+
+// Mobile steppers: rectangle only
+if (state.shape === 'rectangle' && isMobile()) {
+  els('[data-stepper]', h).forEach(btn => {
+    btn.addEventListener('click', () => {
+      const code = btn.getAttribute('data-stepper'); // +L, -W
+      const dir = code[0] === '+' ? 1 : -1;
+      const which = code.slice(1);
+
+      const input = el(`#dim-${which}`, appRoot);
+      if (!input) return;
+
+      const cur = parseFloat(input.value || '0') || 0;
+      const next = clamp(cur + dir * 1.5, 1, which === 'L' ? MAX_LEN : MAX_WID);
+
+      input.value = fmt2(next);
+      readDims();
+      drawShape();
+    });
+  });
+}
+
 
   function readDims() {
     const L = parseFloat(el('#dim-L', appRoot)?.value || 0);
