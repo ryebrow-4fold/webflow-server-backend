@@ -676,8 +676,8 @@ const COLOR_PAGES = {
 
   /* Big logo */
   .rcg-logo{
-    width: 52px;
-    height: 52px;
+    width: 62px;
+    height: 62px;
   }
 
   /* Pane handle: show instruction text (don’t hide the step block on mobile) */
@@ -1085,18 +1085,6 @@ const COLOR_PAGES = {
     document.body.style.overflow = '';
   }
 
-  function updateColorLink() {
-  const a = el('#rcg-color-link', appRoot);
-  if (!a) return;
-
-  const key = state.color || DEFAULT_COLOR;
-  const href = COLOR_PAGES[key] || COLOR_PAGES[DEFAULT_COLOR] || '#';
-  a.href = href;
-
-  // If you ever don't have a page for a color, hide the link:
-  a.style.display = (href === '#') ? 'none' : '';
-}
-
 
   // Desktop default: inline
   attachAppToDesktop();
@@ -1260,8 +1248,6 @@ function maybeShowEdgeCallout() {
 
   const gridG = document.createElementNS(ns, 'g'); 
   gridG.setAttribute('opacity', '0.12'); 
-  bg.setAttribute('width', '1400');
-  bg.setAttribute('height', '600');
   const imageG = document.createElementNS(ns, 'g');
   const shapeG = document.createElementNS(ns, 'g');
   const sinksG = document.createElementNS(ns, 'g');
@@ -1302,7 +1288,7 @@ function maybeShowEdgeCallout() {
   bg.setAttribute('x', '0'); bg.setAttribute('y', '0');
   bg.setAttribute('width', '1400'); bg.setAttribute('height', '600');
   bg.setAttribute('fill', 'url(#rcgGridPattern)');
-  gridG.setAttribute('opacity', '0.08');
+gridG.setAttribute('opacity', '0.12');
   gridG.appendChild(bg);
 }
 drawGrid();
@@ -1960,145 +1946,99 @@ if (nextBtn) nextBtn.addEventListener('click', async () => {
 }
 
 
-  // -----------------------------
-  // Step 1 dim inputs
-  // -----------------------------
-  function buildDimInputs() {
-    const h = el('#rcg-dims', appRoot);
-    if (!state.shape) {
-      h.innerHTML = '<div class="rcg-sub">Choose a shape to set measurements.</div>';
-      return;
-    }
+ // -----------------------------
+// Step 1 dim inputs
+// -----------------------------
+function buildDimInputs() {
+  const h = el('#rcg-dims', appRoot);
+  if (!h) return;
 
-   if (state.shape === 'rectangle') {
-  if (isMobile()) {
-    h.innerHTML = `
-      <div class="rcg-dimrow">
+  if (!state.shape) {
+    h.innerHTML = '<div class="rcg-sub">Choose a shape to set measurements.</div>';
+    return;
+  }
+
+  // --- Render inputs per shape ---
+  if (state.shape === 'rectangle') {
+    if (isMobile()) {
+      h.innerHTML = `
+        <div class="rcg-dimrow">
+          <label class="rcg-label">L (in)</label>
+          <input class="rcg-input" id="dim-L" type="number" step="0.125" min="1" max="${MAX_LEN}" value="${fmt2(state.dims.L || 36)}">
+          <button class="rcg-stepper" data-stepper="-L" type="button">−</button>
+          <button class="rcg-stepper" data-stepper="+L" type="button">+</button>
+        </div>
+
+        <div class="rcg-dimrow">
+          <label class="rcg-label">W (in)</label>
+          <input class="rcg-input" id="dim-W" type="number" step="0.125" min="1" max="${MAX_WID}" value="${fmt2(state.dims.W || 25.5)}">
+          <button class="rcg-stepper" data-stepper="-W" type="button">−</button>
+          <button class="rcg-stepper" data-stepper="+W" type="button">+</button>
+        </div>
+      `;
+    } else {
+      h.innerHTML = `
         <label class="rcg-label">L (in)</label>
-        <input class="rcg-input" id="dim-L" type="number" step="0.125" min="1" max="${MAX_LEN}" value="36.00">
-        <button class="rcg-stepper" data-stepper="-L" type="button">−</button>
-        <button class="rcg-stepper" data-stepper="+L" type="button">+</button>
-      </div>
+        <input class="rcg-input" id="dim-L" type="number" step="0.125" min="1" max="${MAX_LEN}" value="${fmt2(state.dims.L || 36)}">
 
-      <div class="rcg-dimrow">
         <label class="rcg-label">W (in)</label>
-        <input class="rcg-input" id="dim-W" type="number" step="0.125" min="1" max="${MAX_WID}" value="25.50">
-        <button class="rcg-stepper" data-stepper="-W" type="button">−</button>
-        <button class="rcg-stepper" data-stepper="+W" type="button">+</button>
-      </div>
-    `;
-  } else {
-    // desktop: no steppers
+        <input class="rcg-input" id="dim-W" type="number" step="0.125" min="1" max="${MAX_WID}" value="${fmt2(state.dims.W || 25.5)}">
+      `;
+    }
+  } else if (state.shape === 'circle') {
     h.innerHTML = `
-      <label class="rcg-label">L (in)</label><input class="rcg-input" id="dim-L" type="number" step="0.125" min="1" max="${MAX_LEN}" value="36.00">
-      <label class="rcg-label">W (in)</label><input class="rcg-input" id="dim-W" type="number" step="0.125" min="1" max="${MAX_WID}" value="25.50">
+      <label class="rcg-label">Diameter (in)</label>
+      <input class="rcg-input" id="dim-D" type="number" step="0.125" min="1" max="${MAX_DIAM}" value="${fmt2(state.dims.D || 30)}">
+    `;
+  } else if (state.shape === 'polygon') {
+    const n = clamp(state.dims.n || 6, 5, 18);
+    const sMax = (MAX_DIAM * Math.sin(Math.PI / n)).toFixed(2);
+
+    h.innerHTML = `
+      <label class="rcg-label">Sides</label>
+      <input class="rcg-input" id="dim-N" type="number" step="1" min="5" max="18" value="${n}">
+
+      <label class="rcg-label">Side (in)</label>
+      <input class="rcg-input" id="dim-A" type="number" step="0.125" min="1" max="${sMax}" value="${fmt2(state.dims.A || 12)}">
+
+      <span class="rcg-sub">Max side ≈ ${sMax}" (to keep size ≤ ${MAX_DIAM}")</span>
     `;
   }
-}
 
-    h.oninput = () => { readDims(); drawShape(); };
-    h.onchange = () => {
-      ['#dim-L', '#dim-W', '#dim-D', '#dim-A'].forEach(sel => {
-        const i = el(sel, appRoot);
-        if (i && i.value !== '') i.value = fmt2(i.value);
-      });
-      if (el('#dim-N', appRoot)) {
-        const n = parseInt(el('#dim-N', appRoot).value || '6', 10);
-        const sMax = (MAX_DIAM * Math.sin(Math.PI / n)).toFixed(2);
-        const a = el('#dim-A', appRoot);
-        if (a) {
-          a.max = sMax;
-          if (parseFloat(a.value) > parseFloat(sMax)) a.value = sMax;
-        }
-      }
-      readDims(); drawShape();
-    };
+  // --- Bind input handlers ---
+  h.oninput = () => {
+    readDims();
+    drawShape();
+  };
 
-if (isMobile()) {
-  els('[data-stepper]', h).forEach(btn => {
-    btn.addEventListener('click', () => {
-      const code = btn.getAttribute('data-stepper'); // +L, -W, etc.
-      const dir = code[0] === '+' ? 1 : -1;
-      const which = code.slice(1); // L or W
-
-      const input = el(`#dim-${which}`, appRoot);
-      if (!input) return;
-
-      const cur = parseFloat(input.value || '0') || 0;
-      const next = cur + dir * 1.5;
-
-      input.value = fmt2(next);
-      readDims();
-      drawShape();
+  h.onchange = () => {
+    // normalize formatting
+    ['#dim-L', '#dim-W', '#dim-D', '#dim-A'].forEach(sel => {
+      const i = el(sel, appRoot);
+      if (i && i.value !== '') i.value = fmt2(i.value);
     });
-  });
-}
+
+    // polygon: update side max based on N
+    const nInput = el('#dim-N', appRoot);
+    if (nInput) {
+      const n = clamp(parseInt(nInput.value || '6', 10), 5, 18);
+      const sMax = (MAX_DIAM * Math.sin(Math.PI / n)).toFixed(2);
+      const a = el('#dim-A', appRoot);
+      if (a) {
+        a.max = sMax;
+        if (parseFloat(a.value) > parseFloat(sMax)) a.value = sMax;
+      }
+    }
 
     readDims();
-  }
+    drawShape();
+  };
 
-// Mobile steppers: rectangle only
-if (state.shape === 'rectangle' && isMobile()) {
-  els('[data-stepper]', h).forEach(btn => {
-    btn.addEventListener('click', () => {
-      const code = btn.getAttribute('data-stepper'); // +L, -W
-      const dir = code[0] === '+' ? 1 : -1;
-      const which = code.slice(1);
 
-      const input = el(`#dim-${which}`, appRoot);
-      if (!input) return;
-
-      const cur = parseFloat(input.value || '0') || 0;
-      const next = clamp(cur + dir * 1.5, 1, which === 'L' ? MAX_LEN : MAX_WID);
-
-      input.value = fmt2(next);
-      readDims();
-      drawShape();
-    });
-  });
+  // initialize dims from the freshly rendered inputs
+  readDims();
 }
 
-
-  function readDims() {
-    const L = parseFloat(el('#dim-L', appRoot)?.value || 0);
-    const W = parseFloat(el('#dim-W', appRoot)?.value || 0);
-    const D = parseFloat(el('#dim-D', appRoot)?.value || 0);
-    const A = parseFloat(el('#dim-A', appRoot)?.value || 0);
-    const N = parseInt(el('#dim-N', appRoot)?.value || 0, 10);
-
-    if (state.shape === 'rectangle') state.dims = { L: clamp(L, 1, MAX_LEN), W: clamp(W, 1, MAX_WID) };
-    else if (state.shape === 'circle') state.dims = { D: clamp(D, 1, MAX_DIAM) };
-    else {
-      const n = clamp(N || 6, 5, 18);
-      const sMax = MAX_DIAM * Math.sin(Math.PI / n);
-      state.dims = { n, A: clamp(A || 12, 1, sMax) };
-    }
-    state.area = areaSqft(state.shape, state.dims);
-  }
-
-  function setShapeFromIcon(icon) {
-  state.activeIcon = icon;
-  state.shape = (icon === 'square') ? 'rectangle' : icon;
-
-  state.sinks = [];
-  state.edges = [];
-  state.backsplash = false;
-
-  // rectangle step 2 will apply 3-edge default on entry
-  state.step2Initialized = false;
-  state.hoverEdge = null;
-
-  // dynamic step order
-  state.stepOrder = getStepOrder();
-  state.stepId = 1;
-
-  els('[data-icon]', appRoot).forEach(b => b.classList.toggle('active', b.dataset.icon === icon));
-
-  buildDimInputs();   // sets dim inputs + calls readDims()
-  drawShape();        // immediate redraw (fixes “only changes after editing dims”)
-
-  renderCurrentStepUI();
-}
 
   // -----------------------------
   // Step 3 sinks UI
