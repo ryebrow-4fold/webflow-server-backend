@@ -309,13 +309,48 @@
       .sink-chip .rcg-input{ width:96px; height:36px; }
       .sink-chip select[data-spread]{ width:64px; height:36px; }
 
+@media (max-width:980px){
+  .rcg-dimrow .rcg-label{
+    white-space: nowrap;
+  }
+
+}
+
+@media (max-width:980px){
+  /* remove spacing between the two stepper buttons */
+  .rcg-dimrow,
+  .rcg-polygrp{
+    column-gap: 0 !important;
+  }
+
+  /* specifically add back spacing between label and input */
+  .rcg-dimrow .rcg-input,
+  .rcg-polygrp .rcg-input{
+    margin-right: 8px; /* keeps breathing room before the steppers */
+  }
+
+  /* make the stepper pair look like one control */
+  .rcg-stepper{
+    margin-left: 0 !important;
+  }
+  .rcg-stepper + .rcg-stepper{
+    border-left: 0 !important; /* shared stroke line */
+  }
+}
+
+@media (max-width:980px){
+  /* tighten polygon inputs */
+  #dim-N{ width: 56px !important; }  /* two digits */
+  #dim-A{ width: 92px !important; }  /* e.g. 30.00 */
+}
+
       /* Step 1 mobile steppers */
       @media (max-width:980px){
         #rcg-dims{ display:flex; flex-direction:column; gap:12px; align-items:stretch; }
 
         .rcg-dimrow{
           display:grid;
-          grid-template-columns: 88px 1fr auto auto;
+          grid-template-columns: 96px 1fr auto auto;
           gap:8px;
           align-items:center;
         }
@@ -340,11 +375,13 @@
         .rcg-polygrp{
           flex:1;
           display:grid;
-          grid-template-columns: 64px 1fr auto auto;
+          grid-template-columns: 56px auto auto auto !important;
           gap:8px;
           align-items:center;
           min-width:0;
         }
+
+}
 
         /* Mobile step transitions (restored) */
         .rcg-step{ animation: rcgSlideIn .18s ease-out; }
@@ -398,11 +435,27 @@
           z-index:50;
         }
         #rcg-pane-label{ display:none; }
-        #rcg-pane-meta{ display:block; font-weight:900; font-size:13px; color:#111; white-space:nowrap; }
+        @media (min-width:981px){
+  .rcg-stepper{ display:none; }
+  #rcg-pane-label{ display:none; }
+
+  #rcg-pane-meta{
+    display:block;
+    font-size:12px !important;
+    font-weight:300 !important;
+    letter-spacing:0.2px;
+    color:#111;
+    white-space:nowrap;
+  }
+
+  /* Desktop baseline nudge for link */
+  #rcg-color-link{ position:relative; top:1px; }
+}
 
         /* Desktop baseline nudge for link */
         #rcg-color-link{ position:relative; top:1px; }
       }
+
 
       /* Mobile layout */
       @media (max-width:980px){
@@ -901,7 +954,6 @@
               <button class="rcg-stepper" data-stepper="+A" type="button">+</button>
             </div>
           </div>
-          <span class="rcg-sub">Max side ≈ ${sMax}" (to keep size ≤ ${MAX_DIAM}")</span>
         `;
 
         // polygon steppers: N +/-1, A +/-0.5"
@@ -948,7 +1000,6 @@
           <label class="rcg-label">Side (in)</label>
           <input class="rcg-input" id="dim-A" type="number" step="0.125" min="1" max="${sMax}" value="${fmt2(state.dims.A || 12)}">
 
-          <span class="rcg-sub">Max side ≈ ${sMax}" (to keep size ≤ ${MAX_DIAM}")</span>
         `;
       }
     }
@@ -1130,6 +1181,7 @@
     t.setAttribute('stroke', '#fff');
     t.setAttribute('stroke-width', String(strokeW));
     t.setAttribute('paint-order', 'stroke');
+    t.setAttribute('pointer-events', 'none');
 
     sinkDimsG.appendChild(t);
   }
