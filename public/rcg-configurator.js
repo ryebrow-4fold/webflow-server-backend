@@ -18,11 +18,11 @@
   const LOGO_URL = mount.dataset.logo || '';
 
   // -----------------------------
-  // Admin knobs
+  // Admin knobs / limits
   // -----------------------------
   const MAX_LEN = 72;
-  const MAX_WID = 62;
-  const MAX_DIAM = 62;
+  const MAX_WID = 60;   // ✅ updated
+  const MAX_DIAM = 60;  // ✅ updated
 
   const MIN_SINK_EDGE = 4;
   const MIN_SINK_GAP = 4;
@@ -44,6 +44,7 @@
     { max: Infinity, mult: 1.85 }
   ];
 
+  // Mobile can keep label + instruction together
   const STEP_LABELS = {
     1: 'Define your shape',
     2: 'Choose Polished Sides',
@@ -165,7 +166,7 @@
         border-bottom:1px solid #e6e6e6; gap:10px;
       }
       .rcg-topbar .left{ display:flex; align-items:center; gap:10px; min-width:0; }
-      .rcg-topbar .meta{ font-size:12px; color:#555; white-space:nowrap; }
+      .rcg-topbar .meta{ font-size:12px; color:#555; white-space:nowrap; font-weight:900; }
       .rcg-logo{ width:64px; height:64px; object-fit:contain; display:none; }
       .rcg-logo.rcg-has{ display:block; }
       .rcg-close{
@@ -220,9 +221,6 @@
         margin-bottom:10px;
         user-select:none;
       }
-
-      /* Header spacing */
-      .rcg-step .rcg-title{ margin-top:6px; margin-bottom:4px; }
 
       /* Buttons */
       .rcg-btn{
@@ -313,22 +311,76 @@
 
       /* Step 1 mobile steppers */
       @media (max-width:980px){
-        #rcg-dims{ display:flex; flex-direction:column; gap:10px; align-items:stretch; }
+        #rcg-dims{ display:flex; flex-direction:column; gap:12px; align-items:stretch; }
+
         .rcg-dimrow{
           display:grid;
-          grid-template-columns: 70px 1fr auto auto;
+          grid-template-columns: 88px 1fr auto auto;
           gap:8px;
           align-items:center;
         }
         .rcg-stepper{
-          height:42px;
-          width:42px;
+          height:40px;
+          width:40px;
           border:1px solid #000;
           background:#fff;
           font-weight:900;
           cursor:pointer;
+          font-size:16px;
+          line-height:1;
+        }
+
+        /* Polygon mobile: two groups on ONE ROW */
+        .rcg-polyrow{
+          display:flex;
+          gap:10px;
+          align-items:center;
+          width:100%;
+        }
+        .rcg-polygrp{
+          flex:1;
+          display:grid;
+          grid-template-columns: 64px 1fr auto auto;
+          gap:8px;
+          align-items:center;
+          min-width:0;
+        }
+
+        /* Mobile step transitions (restored) */
+        .rcg-step{ animation: rcgSlideIn .18s ease-out; }
+        @keyframes rcgSlideIn{
+          from{ transform: translateX(14px); opacity: 0; }
+          to{ transform: translateX(0); opacity: 1; }
+        }
+
+        /* Mobile spacing / "air" */
+        .rcg-panel{ padding: 12px; }
+        .rcg-title{ margin-top: 14px; margin-bottom: 10px; }
+        #rcg-step2 .rcg-edge-status{ margin-top: 18px; }
+        #rcg-step3 .sink-controls{ margin-top: 18px; }
+        #rcg-step4 #rcg-stone-zip-row{ margin-top: 18px; }
+
+        /* Mobile: back button 1px down to align with Next */
+        #rcg-back{ position:relative; top:1px; }
+
+        /* Mobile final step: force Stone + ZIP on same row */
+        #rcg-stone-zip-row{
+          flex-wrap: nowrap !important;
+          gap: 8px !important;
+          align-items:center;
+        }
+        #rcg-stone-zip-row label{ white-space: nowrap; }
+        #rcg-color{
+          min-width: 140px !important;
+          width: 140px !important;
+          flex: 0 0 auto !important;
+        }
+        #rcg-zip{
+          width: 92px !important;
+          flex: 0 0 auto !important;
         }
       }
+
       @media (min-width:981px){
         .rcg-stepper{ display:none; }
       }
@@ -347,6 +399,9 @@
         }
         #rcg-pane-label{ display:none; }
         #rcg-pane-meta{ display:block; font-weight:900; font-size:13px; color:#111; white-space:nowrap; }
+
+        /* Desktop baseline nudge for link */
+        #rcg-color-link{ position:relative; top:1px; }
       }
 
       /* Mobile layout */
@@ -429,7 +484,7 @@
               <div class="rcg-title" id="rcg-instr-1"></div>
               <div class="shape-icons" id="shape-icons"></div>
               <div style="margin-top:10px" class="rcg-row" id="rcg-dims"></div>
-              <div class="rcg-sub">Max size: 72" × 62" (rect) or 62" diameter (round/polygon).</div>
+              <div class="rcg-sub" id="rcg-size-note"></div>
             </div>
 
             <div id="rcg-step2" class="rcg-step rcg-hidden">
@@ -464,7 +519,7 @@
                 </div>
 
                 <div id="rcg-sink-pills" style="display:grid; gap:8px"></div>
-                <div class="rcg-sub">Sinks must be ≥ ${MIN_SINK_EDGE}" from edges and ≥ ${MIN_SINK_GAP}" from each other. Drag sinks in the preview.</div>
+                <div class="rcg-sub" id="rcg-sink-disclosure">Sinks must be ≥ ${MIN_SINK_EDGE}" from edges and ≥ ${MIN_SINK_GAP}" from each other. Drag sinks in the preview.</div>
               </div>
 
               <div id="rcg-nonrect-note" class="rcg-sub rcg-hidden">Sink placement is available for rectangles only.</div>
@@ -487,7 +542,7 @@
                   inputmode="numeric" pattern="\\d{5}" style="width:120px">
               </div>
 
-              <div class="rcg-sub">Ensure ZIP is your delivery location, to be priced upon checkout.</div>
+              <div class="rcg-sub" id="rcg-zip-disclosure">Ensure ZIP is final delivery location; priced at checkout.</div>
             </div>
           </aside>
         </div>
@@ -550,7 +605,6 @@
   const state = {
     stepOrder: [1,2,3,4],
     stepId: 1,
-
     shape: null,       // 'rectangle' | 'circle' | 'polygon'
     dims: {},
     sinks: [],
@@ -559,7 +613,6 @@
     area: 0,
     activeIcon: 'square',
     backsplash: false,
-
     step2Initialized: false
   };
 
@@ -579,6 +632,21 @@
     const href = COLOR_PAGES[key] || COLOR_PAGES[DEFAULT_COLOR] || '#';
     a.href = href;
     a.style.display = (href === '#') ? 'none' : '';
+  }
+
+  function updateSizeDisclosure() {
+    const note = el('#rcg-size-note', appRoot);
+    if (!note) return;
+
+    if (state.shape === 'rectangle') {
+      note.textContent = `Max size ${MAX_LEN}" length and ${MAX_WID}" height.`;
+    } else if (state.shape === 'circle') {
+      note.textContent = `Max size ${MAX_DIAM}" diameter.`;
+    } else if (state.shape === 'polygon') {
+      note.textContent = `Max size not to exceed ${MAX_DIAM}" total width/height.`;
+    } else {
+      note.textContent = '';
+    }
   }
 
   function initStep2DefaultsIfNeeded() {
@@ -684,9 +752,17 @@
 
     // pane header
     const paneLabel = el('#rcg-pane-label', appRoot);
-    if (paneLabel) paneLabel.textContent = STEP_LABELS[stepId] || '';
     const paneMeta = el('#rcg-pane-meta', appRoot);
-    if (paneMeta) paneMeta.textContent = `${idx + 1}/${total} — ${STEP_LABELS[stepId] || ''}`;
+
+    if (isDesktop()) {
+      // ✅ Desktop: remove redundancy; show just "Step X"
+      if (paneMeta) paneMeta.textContent = `Step ${idx + 1}`;
+      if (paneLabel) paneLabel.textContent = '';
+    } else {
+      // ✅ Mobile: keep label text
+      if (paneLabel) paneLabel.textContent = STEP_LABELS[stepId] || '';
+      if (paneMeta) paneMeta.textContent = '';
+    }
 
     // entry hooks
     if (stepId === 2 && state.shape === 'rectangle') {
@@ -696,6 +772,12 @@
       maybeShowEdgeCallout();
     }
     if (stepId === 4) updateColorLink();
+
+    // mobile-only disclosure tweak for sink step
+    const sinkDisclosure = el('#rcg-sink-disclosure', appRoot);
+    if (sinkDisclosure && isMobile()) {
+      sinkDisclosure.textContent = `Sinks must be ≥ ${MIN_SINK_EDGE}" from edges and ≥ ${MIN_SINK_GAP}" from each other.`;
+    }
 
     drawShape();
     updateNav();
@@ -747,24 +829,24 @@
       if (isMobile()) {
         h.innerHTML = `
           <div class="rcg-dimrow">
-            <label class="rcg-label">L (in)</label>
+            <label class="rcg-label">Length (in)</label>
             <input class="rcg-input" id="dim-L" type="number" step="0.125" min="1" max="${MAX_LEN}" value="${fmt2(state.dims.L || 36)}">
             <button class="rcg-stepper" data-stepper="-L" type="button">−</button>
             <button class="rcg-stepper" data-stepper="+L" type="button">+</button>
           </div>
 
           <div class="rcg-dimrow">
-            <label class="rcg-label">W (in)</label>
+            <label class="rcg-label">Width (in)</label>
             <input class="rcg-input" id="dim-W" type="number" step="0.125" min="1" max="${MAX_WID}" value="${fmt2(state.dims.W || 25.5)}">
             <button class="rcg-stepper" data-stepper="-W" type="button">−</button>
             <button class="rcg-stepper" data-stepper="+W" type="button">+</button>
           </div>
         `;
 
-        // bind steppers (rectangle only)
+        // rectangle steppers: 1.5"
         els('[data-stepper]', h).forEach(btn => {
           btn.addEventListener('click', () => {
-            const code = btn.getAttribute('data-stepper'); // +L, -W
+            const code = btn.getAttribute('data-stepper');
             const dir = code[0] === '+' ? 1 : -1;
             const which = code.slice(1);
 
@@ -777,39 +859,101 @@
 
             input.value = fmt2(next);
             readDims();
+            updateSizeDisclosure();
             drawShape();
           });
         });
       } else {
         h.innerHTML = `
-          <label class="rcg-label">L (in)</label>
+          <label class="rcg-label">Length (in)</label>
           <input class="rcg-input" id="dim-L" type="number" step="0.125" min="1" max="${MAX_LEN}" value="${fmt2(state.dims.L || 36)}">
 
-          <label class="rcg-label">W (in)</label>
+          <label class="rcg-label">Width (in)</label>
           <input class="rcg-input" id="dim-W" type="number" step="0.125" min="1" max="${MAX_WID}" value="${fmt2(state.dims.W || 25.5)}">
         `;
       }
     } else if (state.shape === 'circle') {
+      // ✅ keep on one line naturally (label + field)
       h.innerHTML = `
         <label class="rcg-label">Diameter (in)</label>
         <input class="rcg-input" id="dim-D" type="number" step="0.125" min="1" max="${MAX_DIAM}" value="${fmt2(state.dims.D || 30)}">
       `;
     } else {
+      // polygon
       const n = clamp(state.dims.n || 6, 5, 18);
       const sMax = (MAX_DIAM * Math.sin(Math.PI / n)).toFixed(2);
 
-      h.innerHTML = `
-        <label class="rcg-label">Sides</label>
-        <input class="rcg-input" id="dim-N" type="number" step="1" min="5" max="18" value="${n}">
+      if (isMobile()) {
+        // ✅ single row, two groups, each with steppers
+        h.innerHTML = `
+          <div class="rcg-polyrow">
+            <div class="rcg-polygrp">
+              <label class="rcg-label">Sides</label>
+              <input class="rcg-input" id="dim-N" type="number" step="1" min="5" max="18" value="${n}">
+              <button class="rcg-stepper" data-stepper="-N" type="button">−</button>
+              <button class="rcg-stepper" data-stepper="+N" type="button">+</button>
+            </div>
 
-        <label class="rcg-label">Side (in)</label>
-        <input class="rcg-input" id="dim-A" type="number" step="0.125" min="1" max="${sMax}" value="${fmt2(state.dims.A || 12)}">
+            <div class="rcg-polygrp">
+              <label class="rcg-label">Side</label>
+              <input class="rcg-input" id="dim-A" type="number" step="0.125" min="1" max="${sMax}" value="${fmt2(state.dims.A || 12)}">
+              <button class="rcg-stepper" data-stepper="-A" type="button">−</button>
+              <button class="rcg-stepper" data-stepper="+A" type="button">+</button>
+            </div>
+          </div>
+          <span class="rcg-sub">Max side ≈ ${sMax}" (to keep size ≤ ${MAX_DIAM}")</span>
+        `;
 
-        <span class="rcg-sub">Max side ≈ ${sMax}" (to keep size ≤ ${MAX_DIAM}")</span>
-      `;
+        // polygon steppers: N +/-1, A +/-0.5"
+        els('[data-stepper]', h).forEach(btn => {
+          btn.addEventListener('click', () => {
+            const code = btn.getAttribute('data-stepper');
+            const dir = code[0] === '+' ? 1 : -1;
+            const which = code.slice(1);
+
+            const input = el(`#dim-${which}`, appRoot);
+            if (!input) return;
+
+            const cur = parseFloat(input.value || '0') || 0;
+
+            if (which === 'N') {
+              const next = clamp(cur + dir * 1, 5, 18);
+              input.value = String(Math.round(next));
+            } else {
+              // A
+              const max = parseFloat(input.max || sMax) || parseFloat(sMax);
+              const next = clamp(cur + dir * 0.5, 1, max);
+              input.value = fmt2(next);
+            }
+
+            // update max-A if N changes
+            const nNow = clamp(parseInt(el('#dim-N', appRoot)?.value || '6', 10), 5, 18);
+            const sMaxNow = (MAX_DIAM * Math.sin(Math.PI / nNow)).toFixed(2);
+            const a = el('#dim-A', appRoot);
+            if (a) {
+              a.max = sMaxNow;
+              if (parseFloat(a.value) > parseFloat(sMaxNow)) a.value = sMaxNow;
+            }
+
+            readDims();
+            updateSizeDisclosure();
+            drawShape();
+          });
+        });
+      } else {
+        h.innerHTML = `
+          <label class="rcg-label">Sides</label>
+          <input class="rcg-input" id="dim-N" type="number" step="1" min="5" max="18" value="${n}">
+
+          <label class="rcg-label">Side (in)</label>
+          <input class="rcg-input" id="dim-A" type="number" step="0.125" min="1" max="${sMax}" value="${fmt2(state.dims.A || 12)}">
+
+          <span class="rcg-sub">Max side ≈ ${sMax}" (to keep size ≤ ${MAX_DIAM}")</span>
+        `;
+      }
     }
 
-    h.oninput = () => { readDims(); drawShape(); };
+    h.oninput = () => { readDims(); updateSizeDisclosure(); drawShape(); };
     h.onchange = () => {
       ['#dim-L', '#dim-W', '#dim-D', '#dim-A'].forEach(sel => {
         const i = el(sel, appRoot);
@@ -828,10 +972,12 @@
       }
 
       readDims();
+      updateSizeDisclosure();
       drawShape();
     };
 
     readDims();
+    updateSizeDisclosure();
   }
 
   // -----------------------------
@@ -934,15 +1080,14 @@
     if (state.shape === 'polygon')   { const n = state.dims.n || 6; const A = state.dims.A || 12; const diam = polyCircumDiam(n, A); widthIn = diam; heightIn = diam; }
 
     const s = Math.min(maxW / widthIn, maxH / heightIn) * 0.995;
-    const wpx = widthIn * s, hpx = heightIn * s;
-    const remX = 1400 - wpx;
-    const remY = 600 - hpx;
+    const wpx = widthIn * s;
+    const hpx = heightIn * s;
 
-    const cx = remX * 0.5;
-    let cy = remY * 0.5;
-    cy = Math.max(isMobile() ? 16 : 48, cy); // keep breathing room on desktop
+    // ✅ true centered, bounded so it cannot crop (fixes desktop “bottom cutoff”)
+    const cx = clamp((1400 - wpx) / 2, pad, 1400 - wpx - pad);
+    const cy = clamp((600  - hpx) / 2, pad, 600  - hpx - pad);
 
-    return { s, cx, cy, widthIn, heightIn };
+    return { s, cx, cy, widthIn, heightIn, wpx, hpx, pad };
   }
 
   function label(text, x, y) {
@@ -1032,9 +1177,9 @@
 
     if (!state.shape) return;
 
-    const { s, cx, cy, widthIn, heightIn } = getScale();
+    const { s, cx, cy, widthIn, heightIn, wpx, hpx } = getScale();
     let pathEl;
-    let bbox = { x: cx, y: cy, width: widthIn * s, height: heightIn * s };
+    let bbox = { x: cx, y: cy, width: wpx, height: hpx };
 
     if (state.shape === 'rectangle') {
       pathEl = document.createElementNS(ns, 'rect');
@@ -1067,7 +1212,62 @@
     clip.innerHTML = '';
     clip.appendChild(pathEl.cloneNode(true));
 
+    // ✅ Step 4 true cutout masking (rectangle + sinks)
     const showTexture = (state.stepId === 4 && !!state.color);
+    const needsCutMask = showTexture && state.shape === 'rectangle' && state.sinks.length > 0;
+
+    let maskId = null;
+    if (needsCutMask) {
+      maskId = 'rcgSinkCutMask';
+      // remove old mask if present
+      const old = el(`#${maskId}`, defs);
+      if (old) old.remove();
+
+      const mask = document.createElementNS(ns, 'mask');
+      mask.setAttribute('id', maskId);
+
+      // white = visible
+      const full = document.createElementNS(ns, 'rect');
+      full.setAttribute('x', '0'); full.setAttribute('y', '0');
+      full.setAttribute('width', '1400'); full.setAttribute('height', '600');
+      full.setAttribute('fill', '#fff');
+      mask.appendChild(full);
+
+      // black sink shapes = punched out (transparent)
+      const { s:sc } = getScale();
+      const rectX = bbox.x, rectY = bbox.y;
+
+      state.sinks.forEach((snk) => {
+        const tpl = SINK_TEMPLATES[snk.key]; if (!tpl) return;
+        const halfW = tpl.w / 2, halfH = tpl.h / 2;
+
+        const sinkLeft = rectX + (snk.x - halfW) * sc;
+        const sinkTop  = rectY + (snk.y - halfH) * sc;
+        const sinkWpx  = tpl.w * sc;
+        const sinkHpx  = tpl.h * sc;
+
+        let cut;
+        if (tpl.shape === 'oval') {
+          cut = document.createElementNS(ns, 'ellipse');
+          cut.setAttribute('cx', sinkLeft + sinkWpx/2);
+          cut.setAttribute('cy', sinkTop + sinkHpx/2);
+          cut.setAttribute('rx', sinkWpx/2);
+          cut.setAttribute('ry', sinkHpx/2);
+        } else {
+          cut = document.createElementNS(ns, 'rect');
+          cut.setAttribute('x', sinkLeft);
+          cut.setAttribute('y', sinkTop);
+          cut.setAttribute('width', sinkWpx);
+          cut.setAttribute('height', sinkHpx);
+          cut.setAttribute('rx', '4');
+        }
+        cut.setAttribute('fill', '#000');
+        mask.appendChild(cut);
+      });
+
+      defs.appendChild(mask);
+    }
+
     if (showTexture) {
       const col = COLORS.find(x => x.key === state.color);
       if (col && col.url) {
@@ -1077,6 +1277,7 @@
         img.setAttribute('width', bbox.width); img.setAttribute('height', bbox.height);
         img.setAttribute('preserveAspectRatio', 'xMidYMid slice');
         img.setAttribute('clip-path', 'url(#rcgClip)');
+        if (maskId) img.setAttribute('mask', `url(#${maskId})`);
         imageG.appendChild(img);
       }
     }
@@ -1101,9 +1302,11 @@
     // rectangle edges (step 2 only)
     if (state.shape === 'rectangle') {
       const ex = bbox.x, ey = bbox.y, ew = bbox.width, eh = bbox.height;
+
+      // ✅ easier tapping on mobile: larger bands
       const band = isMobile()
-        ? Math.max(44, Math.min(84, Math.min(ew, eh) * 0.26))
-        : Math.max(28, Math.min(64, Math.min(ew, eh) * 0.20));
+        ? Math.max(64, Math.min(110, Math.min(ew, eh) * 0.30))
+        : Math.max(32, Math.min(72, Math.min(ew, eh) * 0.22));
 
       function drawEdge(x1, y1, x2, y2, key) {
         const active = state.edges.includes(key);
@@ -1135,9 +1338,12 @@
           r.setAttribute('fill', '#fff');
           r.setAttribute('fill-opacity', '0.001');
           r.setAttribute('pointer-events', 'all');
+          r.style.touchAction = 'none';
 
           r.addEventListener('pointerdown', (e) => {
             e.preventDefault();
+            if (r.setPointerCapture) r.setPointerCapture(e.pointerId);
+
             const i = state.edges.indexOf(z.key);
             if (i > -1) state.edges.splice(i, 1);
             else state.edges.push(z.key);
@@ -1195,8 +1401,8 @@
           node.setAttribute('stroke', 'var(--rcg-yellow)');
           node.setAttribute('stroke-width', isMobile() ? '6' : '5');
         } else {
-          // Step 4 + others: "cutout" look
-          node.setAttribute('fill', 'none');      // shows grid/background through
+          // Step 4: outline stays, true cutout is handled by mask on the image
+          node.setAttribute('fill', 'none');
           node.setAttribute('stroke', '#111');
           node.setAttribute('stroke-width', isMobile() ? '3' : '2');
         }
@@ -1206,36 +1412,7 @@
         node.style.touchAction = 'none';
         sinksG.appendChild(node);
 
-        // Move crosshair hint on Step 3
-        if (onStep3) {
-          const cxm = sinkLeft + sinkWpx/2;
-          const cym = sinkTop + sinkHpx/2;
-          const len = isMobile() ? 28 : 20;
-          const tip = isMobile() ? 8 : 6;
-
-          const makeLine = (x1,y1,x2,y2) => {
-            const l = document.createElementNS(ns,'line');
-            l.setAttribute('x1',x1); l.setAttribute('y1',y1);
-            l.setAttribute('x2',x2); l.setAttribute('y2',y2);
-            l.setAttribute('stroke','#111');
-            l.setAttribute('stroke-width', isMobile() ? '3' : '2');
-            sinksG.appendChild(l);
-          };
-
-          makeLine(cxm - len, cym, cxm + len, cym);
-          makeLine(cxm, cym - len, cxm, cym + len);
-
-          makeLine(cxm + len, cym, cxm + len - tip, cym - tip);
-          makeLine(cxm + len, cym, cxm + len - tip, cym + tip);
-          makeLine(cxm - len, cym, cxm - len + tip, cym - tip);
-          makeLine(cxm - len, cym, cxm - len + tip, cym + tip);
-          makeLine(cxm, cym - len, cxm - tip, cym - len + tip);
-          makeLine(cxm, cym - len, cxm + tip, cym - len + tip);
-          makeLine(cxm, cym + len, cxm - tip, cym + len - tip);
-          makeLine(cxm, cym + len, cxm + tip, cym + len - tip);
-        }
-
-        // Faucet holes (always visible)
+        // Faucet holes (visible)
         const holeR = toPx(1.25 / 2);
         const centerX = sinkLeft + sinkWpx/2;
         const holeY = sinkTop - toPx(2);
@@ -1273,7 +1450,6 @@
 
           const off = isMobile() ? 18 : 12;
 
-          // left clearance line
           {
             const y = sinkBottom + off;
             dimLine(pieceLeft, y, sinkLeft, y);
@@ -1281,7 +1457,6 @@
             tick(sinkLeft, y - 6, sinkLeft, y + 6);
             dimText(`${fmt2(leftClrIn)}"`, (pieceLeft + sinkLeft)/2, y - (isMobile()? 18 : 12));
           }
-          // right clearance line
           {
             const y = sinkBottom + off;
             dimLine(sinkRight, y, pieceRight, y);
@@ -1289,7 +1464,6 @@
             tick(pieceRight, y - 6, pieceRight, y + 6);
             dimText(`${fmt2(rightClrIn)}"`, (sinkRight + pieceRight)/2, y - (isMobile()? 18 : 12));
           }
-          // bottom clearance line (vertical)
           {
             const x = sinkRight + (isMobile()? 22 : 14);
             dimLine(x, sinkBottom, x, pieceBottom);
@@ -1303,6 +1477,7 @@
         node.addEventListener('pointerdown', (e) => {
           if (state.stepId !== 3) return;
           e.preventDefault();
+          if (node.setPointerCapture) node.setPointerCapture(e.pointerId);
 
           const pt = svgPoint(e);
           const currentCx = rectX + toPx(snk.x);
@@ -1326,23 +1501,20 @@
     e.preventDefault();
 
     const { idx, tpl, bbox, s, ox, oy } = activeSinkDrag;
-
-    const toPx = v => v * s;
-    const toIn = v => v / s;
-
     const rectX = bbox.x, rectY = bbox.y;
 
-    const gw = toPx(tpl.w), gh = toPx(tpl.h);
+    const gw = tpl.w * s;
+    const gh = tpl.h * s;
 
     const pt = svgPoint(e);
     let nx = pt.x - ox;
     let ny = pt.y - oy;
 
-    nx = clamp(nx, rectX + gw/2 + toPx(MIN_SINK_EDGE), rectX + bbox.width - gw/2 - toPx(MIN_SINK_EDGE));
-    ny = clamp(ny, rectY + gh/2 + toPx(MIN_SINK_EDGE), rectY + bbox.height - gh/2 - toPx(MIN_SINK_EDGE));
+    nx = clamp(nx, rectX + gw/2 + MIN_SINK_EDGE * s, rectX + bbox.width - gw/2 - MIN_SINK_EDGE * s);
+    ny = clamp(ny, rectY + gh/2 + MIN_SINK_EDGE * s, rectY + bbox.height - gh/2 - MIN_SINK_EDGE * s);
 
-    const xin = toIn(nx - rectX);
-    const yin = toIn(ny - rectY);
+    const xin = (nx - rectX) / s;
+    const yin = (ny - rectY) / s;
 
     // collision check
     let collide = false;
@@ -1615,7 +1787,6 @@
       if(!res.ok) throw new Error(await res.text());
     } catch (err) {
       console.error('[RCG] DXF email failed', err);
-      // do not block checkout
     }
   }
 
@@ -1743,8 +1914,6 @@
 
     function onDown(e){
       if(!isDesktop()) return;
-
-      // ignore interactive controls
       if (e.target && e.target.closest && e.target.closest('button, input, select, textarea, a')) return;
 
       dragging = true;
@@ -1865,21 +2034,17 @@
   window.addEventListener('resize', () => { setHandleMode(); syncMobilePreviewInset(); syncMode(); });
 
   // -----------------------------
-  // Bootstrap (safe + immediate)
+  // Bootstrap
   // -----------------------------
   function bootstrap() {
     renderShapeIcons(el('#shape-icons', appRoot));
     setHandleMode();
-
-    // initial shape
     setShapeFromIcon('square');
-
     refreshSinkPills();
     syncMobilePreviewInset();
     syncMode();
   }
 
-  // Run after first paint to avoid blocking Webflow rendering
   requestAnimationFrame(() => {
     if ('requestIdleCallback' in window) requestIdleCallback(bootstrap, { timeout: 800 });
     else setTimeout(bootstrap, 0);
