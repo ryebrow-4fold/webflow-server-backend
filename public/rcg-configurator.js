@@ -261,15 +261,42 @@
 
       /* Step 4 title + link */
       .rcg-step4-title{ justify-content:flex-start; flex-wrap:wrap; gap:10px; width:100%; }
-      #rcg-color-link{
-        text-decoration:none;
-        color:#111;
-        font-weight:900;
-        font-size:13px;
-        white-space:nowrap;
-      }
-      #rcg-color-link:hover{ opacity:.8; }
-      #rcg-color-link span{ margin-left:6px; }
+      
+      /* Step 4 CTA: subtle pill button */
+#rcg-color-link{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+
+  height: 22px;                 /* small, elegant */
+  padding: 0 10px;
+
+  border: 1px solid #d7d7d3;    /* slightly darker than pane bg */
+  background: rgba(255,255,255,0.35);
+  color:#111;
+
+  font-weight:900;
+  font-size:13px;
+  line-height:1;
+  white-space:nowrap;
+
+  text-decoration:none !important;
+  border-radius: 999px;         /* max rounded ends */
+}
+
+#rcg-color-link:hover{
+  background: rgba(255,255,255,0.55);
+  opacity: 1;
+}
+
+#rcg-color-link:active{
+  transform: translateY(1px);
+}
+
+#rcg-color-link span{
+  margin-left:6px;
+}
+
 
       /* Step 2 status chip */
       .rcg-edge-status{
@@ -344,6 +371,19 @@
   #dim-A{ width: 92px !important; }  /* e.g. 30.00 */
 }
 
+@media (max-width:980px){
+  /* Uniform label column width across all dim rows */
+  .rcg-dimrow{
+    grid-template-columns: 108px 1fr auto auto !important;
+    align-items:center;
+  }
+  .rcg-dimrow .rcg-label{
+    white-space: nowrap;
+    line-height: 1;
+  }
+}
+
+
       /* Step 1 mobile steppers */
       @media (max-width:980px){
         #rcg-dims{ display:flex; flex-direction:column; gap:12px; align-items:stretch; }
@@ -363,22 +403,6 @@
           cursor:pointer;
           font-size:16px;
           line-height:1;
-        }
-
-        /* Polygon mobile: two groups on ONE ROW */
-        .rcg-polyrow{
-          display:flex;
-          gap:10px;
-          align-items:center;
-          width:100%;
-        }
-        .rcg-polygrp{
-          flex:1;
-          display:grid;
-          grid-template-columns: 56px auto auto auto !important;
-          gap:8px;
-          align-items:center;
-          min-width:0;
         }
 
 }
@@ -451,10 +475,6 @@
   /* Desktop baseline nudge for link */
   #rcg-color-link{ position:relative; top:1px; }
 }
-
-        /* Desktop baseline nudge for link */
-        #rcg-color-link{ position:relative; top:1px; }
-      }
 
 
       /* Mobile layout */
@@ -926,72 +946,99 @@
         `;
       }
     } else if (state.shape === 'circle') {
-      // ✅ keep on one line naturally (label + field)
-      h.innerHTML = `
+  if (isMobile()) {
+    h.innerHTML = `
+      <div class="rcg-dimrow">
         <label class="rcg-label">Diameter (in)</label>
         <input class="rcg-input" id="dim-D" type="number" step="0.125" min="1" max="${MAX_DIAM}" value="${fmt2(state.dims.D || 30)}">
-      `;
+        <button class="rcg-stepper" data-stepper="-D" type="button">−</button>
+        <button class="rcg-stepper" data-stepper="+D" type="button">+</button>
+      </div>
+    `;
+
+    // circle steppers: 1.5"
+    els('[data-stepper]', h).forEach(btn => {
+      btn.addEventListener('click', () => {
+        const code = btn.getAttribute('data-stepper'); // +D / -D
+        const dir = code[0] === '+' ? 1 : -1;
+
+        const input = el('#dim-D', appRoot);
+        if (!input) return;
+
+        const cur = parseFloat(input.value || '0') || 0;
+        const next = clamp(cur + dir * 1.5, 1, MAX_DIAM);
+
+        input.value = fmt2(next);
+        readDims();
+        updateSizeDisclosure();
+        drawShape();
+      });
+    });
+  } else {
+    h.innerHTML = `
+      <label class="rcg-label">Diameter (in)</label>
+      <input class="rcg-input" id="dim-D" type="number" step="0.125" min="1" max="${MAX_DIAM}" value="${fmt2(state.dims.D || 30)}">
+    `;}
+
+
     } else {
       // polygon
       const n = clamp(state.dims.n || 6, 5, 18);
       const sMax = (MAX_DIAM * Math.sin(Math.PI / n)).toFixed(2);
 
       if (isMobile()) {
-        // ✅ single row, two groups, each with steppers
-        h.innerHTML = `
-          <div class="rcg-polyrow">
-            <div class="rcg-polygrp">
-              <label class="rcg-label">Sides</label>
-              <input class="rcg-input" id="dim-N" type="number" step="1" min="5" max="18" value="${n}">
-              <button class="rcg-stepper" data-stepper="-N" type="button">−</button>
-              <button class="rcg-stepper" data-stepper="+N" type="button">+</button>
-            </div>
+  h.innerHTML = `
+    <div class="rcg-dimrow">
+      <label class="rcg-label">Sides</label>
+      <input class="rcg-input" id="dim-N" type="number" step="1" min="5" max="18" value="${n}">
+      <button class="rcg-stepper" data-stepper="-N" type="button">−</button>
+      <button class="rcg-stepper" data-stepper="+N" type="button">+</button>
+    </div>
 
-            <div class="rcg-polygrp">
-              <label class="rcg-label">Side</label>
-              <input class="rcg-input" id="dim-A" type="number" step="0.125" min="1" max="${sMax}" value="${fmt2(state.dims.A || 12)}">
-              <button class="rcg-stepper" data-stepper="-A" type="button">−</button>
-              <button class="rcg-stepper" data-stepper="+A" type="button">+</button>
-            </div>
-          </div>
-        `;
+    <div class="rcg-dimrow">
+      <label class="rcg-label">Side</label>
+      <input class="rcg-input" id="dim-A" type="number" step="0.125" min="1" max="${sMax}" value="${fmt2(state.dims.A || 12)}">
+      <button class="rcg-stepper" data-stepper="-A" type="button">−</button>
+      <button class="rcg-stepper" data-stepper="+A" type="button">+</button>
+    </div>
+  `;
 
-        // polygon steppers: N +/-1, A +/-0.5"
-        els('[data-stepper]', h).forEach(btn => {
-          btn.addEventListener('click', () => {
-            const code = btn.getAttribute('data-stepper');
-            const dir = code[0] === '+' ? 1 : -1;
-            const which = code.slice(1);
+  // polygon steppers: N +/-1, A +/-0.5"
+  els('[data-stepper]', h).forEach(btn => {
+    btn.addEventListener('click', () => {
+      const code = btn.getAttribute('data-stepper');
+      const dir = code[0] === '+' ? 1 : -1;
+      const which = code.slice(1);
 
-            const input = el(`#dim-${which}`, appRoot);
-            if (!input) return;
+      const input = el(`#dim-${which}`, appRoot);
+      if (!input) return;
 
-            const cur = parseFloat(input.value || '0') || 0;
+      const cur = parseFloat(input.value || '0') || 0;
 
-            if (which === 'N') {
-              const next = clamp(cur + dir * 1, 5, 18);
-              input.value = String(Math.round(next));
-            } else {
-              // A
-              const max = parseFloat(input.max || sMax) || parseFloat(sMax);
-              const next = clamp(cur + dir * 0.5, 1, max);
-              input.value = fmt2(next);
-            }
+      if (which === 'N') {
+        const next = clamp(cur + dir * 1, 5, 18);
+        input.value = String(Math.round(next));
+      } else {
+        const max = parseFloat(input.max || sMax) || parseFloat(sMax);
+        const next = clamp(cur + dir * 0.5, 1, max);
+        input.value = fmt2(next);
+      }
 
-            // update max-A if N changes
-            const nNow = clamp(parseInt(el('#dim-N', appRoot)?.value || '6', 10), 5, 18);
-            const sMaxNow = (MAX_DIAM * Math.sin(Math.PI / nNow)).toFixed(2);
-            const a = el('#dim-A', appRoot);
-            if (a) {
-              a.max = sMaxNow;
-              if (parseFloat(a.value) > parseFloat(sMaxNow)) a.value = sMaxNow;
-            }
+      // update max-A if N changes
+      const nNow = clamp(parseInt(el('#dim-N', appRoot)?.value || '6', 10), 5, 18);
+      const sMaxNow = (MAX_DIAM * Math.sin(Math.PI / nNow)).toFixed(2);
+      const a = el('#dim-A', appRoot);
+      if (a) {
+        a.max = sMaxNow;
+        if (parseFloat(a.value) > parseFloat(sMaxNow)) a.value = sMaxNow;
+      }
 
-            readDims();
-            updateSizeDisclosure();
-            drawShape();
-          });
-        });
+      readDims();
+      updateSizeDisclosure();
+      drawShape();
+    });
+  });
+
       } else {
         h.innerHTML = `
           <label class="rcg-label">Sides</label>
