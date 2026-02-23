@@ -465,7 +465,7 @@
 
   #rcg-pane-meta{
     display:block;
-    font-size:12px !important;
+    font-size:18px !important;
     font-weight:300 !important;
     letter-spacing:0.2px;
     color:#111;
@@ -639,14 +639,22 @@
   function attachAppToModal() {
     if (!modalBody.contains(appRoot)) modalBody.appendChild(appRoot);
   }
+  function detachApp() {
+  if (inlineHost && inlineHost.contains(appRoot)) inlineHost.removeChild(appRoot);
+  if (modalBody && modalBody.contains(appRoot)) modalBody.removeChild(appRoot);
+}
+
 
   function openModal() {
-    attachAppToModal();
-    modal.setAttribute('aria-hidden', 'false');
-    document.documentElement.style.overflow = 'hidden';
-    document.body.style.overflow = 'hidden';
-    syncMobilePreviewInset();
-  }
+  detachApp();
+  attachAppToModal();
+  modal.setAttribute('aria-hidden', 'false');
+  document.documentElement.style.overflow = 'hidden';
+  document.body.style.overflow = 'hidden';
+  syncMobilePreviewInset();
+  drawShape(); // optional but helps after remount
+}
+
   function closeModal() {
     modal.setAttribute('aria-hidden', 'true');
     document.documentElement.style.overflow = '';
@@ -654,19 +662,26 @@
   }
 
   function syncMode() {
-    if (isDesktop()) {
-      closeModal();
-      attachAppToDesktop();
-      setHandleMode();
-      const preview = el('.rcg-preview', appRoot);
-      if (preview) preview.style.removeProperty('--rcg-sheet-h');
-    } else {
-      setHandleMode();
-    }
+  if (isDesktop()) {
+    // desktop = always inline
+    closeModal();
+    detachApp();
+    attachAppToDesktop();
+    setHandleMode();
+    const preview = el('.rcg-preview', appRoot);
+    if (preview) preview.style.removeProperty('--rcg-sheet-h');
+  } else {
+    // mobile = never inline (modal only)
+    detachApp();
+    setHandleMode();
   }
+}
+
 
   // Desktop default mount
-  attachAppToDesktop();
+// Mount correctly based on breakpoint
+syncMode();
+
 
   if (openBtn) openBtn.addEventListener('click', () => { if (isMobile()) openModal(); });
   if (closeBtn) closeBtn.addEventListener('click', closeModal);
