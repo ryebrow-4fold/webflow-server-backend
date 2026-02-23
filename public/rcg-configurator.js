@@ -485,7 +485,7 @@
       #rcg-pane-meta{
         display:block;
         font-size:18px !important;
-        font-weight:300 !important;
+        font-weight:400 !important;
         letter-spacing:0.2px;
         color:#111;
         white-space:nowrap;
