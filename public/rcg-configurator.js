@@ -8,7 +8,9 @@
 ============================= */
 
 (() => {
+  // -----------------------------
   // Guard: don’t mount twice
+  // -----------------------------
   if (window.__RCG_CONFIGURATOR_MOUNTED__) return;
   window.__RCG_CONFIGURATOR_MOUNTED__ = true;
 
@@ -20,12 +22,12 @@
   // -----------------------------
   // Admin knobs / limits
   // -----------------------------
-  const MAX_LEN = 72;
-  const MAX_WID = 60;   // ✅ updated
-  const MAX_DIAM = 60;  // ✅ updated
+  const MAX_LEN  = 72;
+  const MAX_WID  = 60;
+  const MAX_DIAM = 60;
 
   const MIN_SINK_EDGE = 4;
-  const MIN_SINK_GAP = 4;
+  const MIN_SINK_GAP  = 4;
 
   const DOLLARS_PER_SQFT = 55;
   const SINK_PRICES = { 'bath-oval': 80, 'bath-rect': 95, 'kitchen-rect': 150 };
@@ -44,7 +46,6 @@
     { max: Infinity, mult: 1.85 }
   ];
 
-  // Mobile can keep label + instruction together
   const STEP_LABELS = {
     1: 'Define your shape',
     2: 'Choose Polished Sides',
@@ -129,393 +130,373 @@
   }
 
   // -----------------------------
-  // Shell + CSS
+  // Shell + CSS (IMPORTANT: style is closed properly)
   // -----------------------------
-  mount.innerHTML = `
-    <style>
-      :root{
-        --rcg-black:#0b0b0b;
-        --rcg-yellow:#ffc400;
-        --rcg-gray:#f3f3f0;
-        --rcg-muted:#6b7280;
-        --rcg-danger:#c1121f;
-      }
-      .rcg-root, .rcg-root *{
-        font-family:'Barlow', system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-        box-sizing:border-box;
-        border-radius:0 !important;
-      }
-      .rcg-inline-host{ width:100%; position:relative; }
+  const CSS = `
+    :root{
+      --rcg-black:#0b0b0b;
+      --rcg-yellow:#ffc400;
+      --rcg-gray:#f3f3f0;
+      --rcg-muted:#6b7280;
+      --rcg-danger:#c1121f;
+    }
 
-      /* Mobile launch button */
-      .rcg-launch-wrap{ width:100%; justify-content:center; margin:10px 0 0; display:none; }
-      .rcg-launch{
-        background:var(--rcg-yellow);
-        color:#000; font-weight:900;
-        padding:14px 18px; border:none; cursor:pointer;
-        width:min(520px,100%); font-size:16px;
-      }
+    .rcg-root, .rcg-root *{
+      font-family:'Barlow', system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      box-sizing:border-box;
+      border-radius:0 !important;
+    }
 
-      /* Modal */
-      .rcg-modal{ position:fixed; inset:0; z-index:999999; background:rgba(0,0,0,.65); display:none; padding:0; }
-      .rcg-modal[aria-hidden="false"]{ display:flex; }
-      .rcg-window{ background:#fff; width:100%; height:100%; display:flex; flex-direction:column; overflow:hidden; }
-      .rcg-topbar{
-        display:flex; align-items:center; justify-content:space-between;
-        padding:10px 12px; background:#fff; color:#111;
-        border-bottom:1px solid #e6e6e6; gap:10px;
-      }
-      .rcg-topbar .left{ display:flex; align-items:center; gap:10px; min-width:0; }
-      .rcg-topbar .meta{ font-size:12px; color:#555; white-space:nowrap; font-weight:900; }
-      .rcg-logo{ width:64px; height:64px; object-fit:contain; display:none; }
-      .rcg-logo.rcg-has{ display:block; }
-      .rcg-close{
-        appearance:none;
-        border:1px solid rgba(0,0,0,.2);
-        background:transparent; color:#111;
-        width:44px; height:44px;
-        display:flex; align-items:center; justify-content:center;
-        cursor:pointer; font-weight:900;
-      }
+    .rcg-inline-host{ width:100%; position:relative; }
 
-      /* App layout */
-      .rcg-app{ width:100%; position:relative; }
-      .rcg-body{
-        width:100%;
-        display:flex;
-        flex-direction:column;
-        min-height:720px;
-        position:relative;
-        background:#fff;
-        border:1px solid #e5e5e5;
-        overflow:hidden;
-      }
-      .rcg-preview{
-        flex:1;
-        min-height:0;
-        background:#fff;
-        position:relative;
-        overflow:hidden;
-      }
-      .rcg-stage{
-        width:100%;
-        height:100%;
-        display:block;
-        touch-action:none;
-      }
+    /* Mobile launcher (hidden by default; shown via media query) */
+    .rcg-launch-wrap{ width:100%; justify-content:center; margin:10px 0 0; display:none; }
+    .rcg-launch{
+      background:var(--rcg-yellow);
+      color:#000;
+      font-weight:900;
+      padding:14px 18px;
+      border:none;
+      cursor:pointer;
+      width:min(520px,100%);
+      font-size:16px;
+    }
 
-      /* Panel */
+    /* Modal */
+    .rcg-modal{ position:fixed; inset:0; z-index:999999; background:rgba(0,0,0,.65); display:none; padding:0; }
+    .rcg-modal[aria-hidden="false"]{ display:flex; }
+    .rcg-window{ background:#fff; width:100%; height:100%; display:flex; flex-direction:column; overflow:hidden; }
+
+    .rcg-topbar{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      padding:10px 12px;
+      background:#fff;
+      color:#111;
+      border-bottom:1px solid #e6e6e6;
+      gap:10px;
+    }
+    .rcg-topbar .left{ display:flex; align-items:center; gap:10px; min-width:0; }
+    .rcg-topbar .meta{ font-size:12px; color:#555; white-space:nowrap; font-weight:900; }
+    .rcg-logo{ width:64px; height:64px; object-fit:contain; display:none; }
+    .rcg-logo.rcg-has{ display:block; }
+    .rcg-close{
+      appearance:none;
+      border:1px solid rgba(0,0,0,.2);
+      background:transparent;
+      color:#111;
+      width:44px;
+      height:44px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      cursor:pointer;
+      font-weight:900;
+    }
+
+    /* App layout */
+    .rcg-app{ width:100%; position:relative; }
+    .rcg-body{
+      width:100%;
+      display:flex;
+      flex-direction:column;
+      min-height:720px;
+      position:relative;
+      background:#fff;
+      border:1px solid #e5e5e5;
+      overflow:hidden;
+    }
+    .rcg-preview{
+      flex:1;
+      min-height:0;
+      background:#fff;
+      position:relative;
+      overflow:hidden;
+    }
+    .rcg-stage{
+      width:100%;
+      height:100%;
+      display:block;
+      touch-action:none;
+    }
+
+    /* Panel */
+    .rcg-panel{
+      background:var(--rcg-gray);
+      padding:12px;
+      line-height:1.2;
+    }
+    .rcg-panel-handle{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      padding:10px 10px;
+      background:#fff;
+      border:1px solid #cfcfcf;
+      margin-bottom:10px;
+      user-select:none;
+    }
+
+    /* Buttons */
+    .rcg-btn{
+      background:var(--rcg-yellow);
+      color:#000;
+      font-weight:900;
+      padding:10px 16px;
+      border:none;
+      cursor:pointer;
+      height:44px;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+    }
+    .rcg-btn[disabled]{ opacity:.5; cursor:not-allowed; }
+    .rcg-btn.outline{ background:#fff; color:#000; border:1px solid #000; }
+    .rcg-icon-btn{ width:44px; padding:0; font-size:22px; line-height:1; }
+
+    .rcg-title{
+      font-size:22px;
+      font-weight:900;
+      margin:0 0 8px;
+      color:var(--rcg-black);
+      display:flex;
+      align-items:center;
+      gap:10px;
+    }
+    .rcg-sub{ color:var(--rcg-muted); font-size:13px; margin:6px 0; line-height:1.2; font-weight:500; }
+    .rcg-row{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    .rcg-input{ width:110px; padding:8px 10px; border:1px solid #cfcfcf; background:#fff; color:#111; font-weight:600; height:44px; }
+    .rcg-label{ font-weight:900; color:#111; }
+    .rcg-hidden{ display:none !important; }
+
+    /* Shape icons */
+    .shape-icons{ display:flex; gap:12px; flex-wrap:nowrap; }
+    .shape-iso{ width:160px; height:80px; background:transparent; border:none; padding:0; cursor:pointer; display:grid; place-items:center; }
+    .shape-iso svg{ width:100%; height:100%; stroke:#000; stroke-width:1; fill:none; }
+    .shape-iso.active svg{ stroke:var(--rcg-yellow); }
+    @media (max-width:640px){
+      .shape-iso{ width:calc(33.333% - 8px); height:calc((33.333% - 8px)/2); }
+    }
+
+    /* Step 4 CTA pill button */
+    .rcg-step4-title{ justify-content:flex-start; flex-wrap:wrap; gap:10px; width:100%; }
+    #rcg-color-link{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      height:22px;
+      padding:0 10px;
+      border:1px solid #d7d7d3;
+      background: rgba(255,255,255,0.35);
+      color:#111;
+      font-weight:900;
+      font-size:13px;
+      line-height:1;
+      white-space:nowrap;
+      text-decoration:none !important;
+      border-radius:999px;
+    }
+    #rcg-color-link:hover{ background: rgba(255,255,255,0.55); opacity:1; }
+    #rcg-color-link:active{ transform: translateY(1px); }
+    #rcg-color-link span{ margin-left:6px; }
+
+    /* Step 2 status chip */
+    .rcg-edge-status{
+      display:flex;
+      align-items:flex-start;
+      gap:10px;
+      background:#fff;
+      border:1px solid #cfcfcf;
+      padding:10px 10px;
+      margin:6px 0 0;
+    }
+    .rcg-edge-icon{ display:inline-flex; gap:4px; width:26px; height:26px; flex:0 0 auto; align-items:center; justify-content:center; }
+    .rcg-edge-icon .line{ display:inline-block; height:18px; }
+    .rcg-edge-icon .thin{ width:3px; background:#111; }
+    .rcg-edge-icon .thick{ width:6px; background:var(--rcg-yellow); }
+    .rcg-edge-status .txt .t{ font-weight:900; font-size:13px; color:#111; line-height:1.1; }
+    .rcg-edge-status .txt .s{ margin-top:2px; font-weight:600; font-size:12px; color:var(--rcg-muted); line-height:1.2; }
+
+    /* Callout */
+    .rcg-callout{
+      position:absolute;
+      left:12px;
+      top:12px;
+      background:#111;
+      color:#fff;
+      padding:10px 12px;
+      font-weight:900;
+      font-size:13px;
+      z-index:20;
+      max-width:70%;
+    }
+
+    /* Sinks UI */
+    .sink-controls{ display:flex; gap:10px; align-items:center; width:100%; }
+    #rcg-sink-select{ flex:1; min-width:220px; height:44px; }
+    #rcg-add-sink{ height:44px; width:44px; padding:0; }
+    .sink-chip{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      padding:8px 12px;
+      background:#fff;
+      font-size:13px;
+      border:1px solid #cfcfcf;
+      overflow:hidden;
+    }
+    .sink-chip button{
+      border:1px solid #000;
+      background:#fff;
+      cursor:pointer;
+      width:28px;
+      height:28px;
+      line-height:26px;
+      font-weight:900;
+    }
+    .sink-chip .rcg-input{ width:96px; height:36px; }
+    .sink-chip select[data-spread]{ width:64px; height:36px; }
+
+    /* -----------------------------
+       MOBILE
+    ----------------------------- */
+    @media (max-width:980px){
+      /* show launcher, hide inline host */
+      .rcg-inline-host{ display:none; }
+      .rcg-launch-wrap{ display:flex; }
+
+      /* modal sizing */
+      .rcg-window{ height:100dvh; }
+      .rcg-modal-body{ height: calc(100dvh - 64px); overflow:hidden; }
+      .rcg-app, .rcg-body{ height:100%; min-height:0; }
+      .rcg-preview{ padding-bottom: calc(var(--rcg-sheet-h, 0px) + 10px); }
+
       .rcg-panel{
-        background:var(--rcg-gray);
-        padding:12px;
-        line-height:1.2;
-      }
-      .rcg-panel-handle{
-        display:flex;
-        align-items:center;
-        justify-content:space-between;
-        gap:10px;
-        padding:10px 10px;
-        background:#fff;
-        border:1px solid #cfcfcf;
-        margin-bottom:10px;
-        user-select:none;
+        position:absolute;
+        left:0; right:0; bottom:0;
+        height:56dvh;
+        max-height:62dvh;
+        overflow:auto;
+        border-top:2px solid #ddd;
+        padding-bottom: calc(12px + env(safe-area-inset-bottom));
       }
 
-      /* Buttons */
-      .rcg-btn{
-        background:var(--rcg-yellow);
-        color:#000;
+      /* topbar 3-column centering */
+      .rcg-topbar{
+        display:grid;
+        grid-template-columns:64px 1fr 64px;
+        align-items:center;
+      }
+      .rcg-topbar .meta{ justify-self:center; font-size:14px; font-weight:900; }
+      .rcg-logo{ width:62px; height:62px; }
+
+      /* pane header */
+      #rcg-pane-meta{ display:none; }
+      #rcg-pane-label{
         font-weight:900;
-        padding:10px 16px;
-        border:none;
-        cursor:pointer;
-        height:44px;
-        display:inline-flex;
+        font-size:14px;
+        line-height:1.15;
+        color:#111;
+        max-width:52vw;
+        white-space:normal;
+      }
+
+      /* step transitions */
+      .rcg-step{ animation: rcgSlideIn .18s ease-out; }
+      @keyframes rcgSlideIn{
+        from{ transform: translateX(14px); opacity: 0; }
+        to{ transform: translateX(0); opacity: 1; }
+      }
+
+      /* dim rows with steppers */
+      #rcg-dims{ display:flex; flex-direction:column; gap:12px; align-items:stretch; }
+      .rcg-dimrow{
+        display:grid;
+        grid-template-columns: 108px 1fr auto auto;
+        gap:8px;
         align-items:center;
-        justify-content:center;
       }
-      .rcg-btn[disabled]{ opacity:.5; cursor:not-allowed; }
-      .rcg-btn.outline{ background:#fff; color:#000; border:1px solid #000; }
-      .rcg-icon-btn{ width:44px; padding:0; font-size:22px; line-height:1; }
+      .rcg-dimrow .rcg-label{ white-space:nowrap; line-height:1; }
 
-      .rcg-title{
-        font-size:22px; font-weight:900;
-        margin:0 0 8px; color:var(--rcg-black);
-        display:flex; align-items:center; gap:10px;
+      .rcg-stepper{
+        height:40px;
+        width:40px;
+        border:1px solid #000;
+        background:#fff;
+        font-weight:900;
+        cursor:pointer;
+        font-size:16px;
+        line-height:1;
+        padding:0;
       }
-      .rcg-sub{ color:var(--rcg-muted); font-size:13px; margin:6px 0; line-height:1.2; font-weight:500; }
-      .rcg-row{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
-      .rcg-input{ width:110px; padding:8px 10px; border:1px solid #cfcfcf; background:#fff; color:#111; font-weight:600; height:44px; }
-      .rcg-label{ font-weight:900; color:#111; }
-      .rcg-hidden{ display:none !important; }
+      /* stepper pair touches */
+      .rcg-dimrow{ column-gap:0 !important; }
+      .rcg-dimrow .rcg-input{ margin-right:8px; }
+      .rcg-stepper + .rcg-stepper{ border-left:0 !important; }
 
-      /* Shape icons */
-      .shape-icons{ display:flex; gap:12px; flex-wrap:nowrap; }
-      .shape-iso{ width:160px; height:80px; background:transparent; border:none; padding:0; cursor:pointer; display:grid; place-items:center; }
-      .shape-iso svg{ width:100%; height:100%; stroke:#000; stroke-width:1; fill:none; }
-      .shape-iso.active svg{ stroke:var(--rcg-yellow); }
-      @media (max-width:640px){
-        .shape-iso{ width:calc(33.333% - 8px); height:calc((33.333% - 8px)/2); }
+      /* mobile spacing */
+      .rcg-title{ margin-top:14px; margin-bottom:10px; }
+      #rcg-step2 .rcg-edge-status{ margin-top:18px; }
+      #rcg-step3 .sink-controls{ margin-top:18px; }
+      #rcg-step4 #rcg-stone-zip-row{ margin-top:18px; }
+
+      /* back button nudge */
+      #rcg-back{ position:relative; top:1px; }
+
+      /* final step row */
+      #rcg-stone-zip-row{
+        flex-wrap: nowrap !important;
+        gap: 8px !important;
+        align-items:center;
       }
-
-      /* Step 4 title + link */
-      .rcg-step4-title{ justify-content:flex-start; flex-wrap:wrap; gap:10px; width:100%; }
-      
-      /* Step 4 CTA: subtle pill button */
-#rcg-color-link{
-  display:inline-flex;
-  align-items:center;
-  justify-content:center;
-
-  height: 22px;                 /* small, elegant */
-  padding: 0 10px;
-
-  border: 1px solid #d7d7d3;    /* slightly darker than pane bg */
-  background: rgba(255,255,255,0.35);
-  color:#111;
-
-  font-weight:900;
-  font-size:13px;
-  line-height:1;
-  white-space:nowrap;
-
-  text-decoration:none !important;
-  border-radius: 999px;         /* max rounded ends */
-}
-
-#rcg-color-link:hover{
-  background: rgba(255,255,255,0.55);
-  opacity: 1;
-}
-
-#rcg-color-link:active{
-  transform: translateY(1px);
-}
-
-#rcg-color-link span{
-  margin-left:6px;
-}
-
-
-      /* Step 2 status chip */
-      .rcg-edge-status{
-        display:flex; align-items:flex-start; gap:10px;
-        background:#fff; border:1px solid #cfcfcf;
-        padding:10px 10px; margin:6px 0 0;
+      #rcg-stone-zip-row label{ white-space: nowrap; }
+      #rcg-color{
+        min-width: 140px !important;
+        width: 140px !important;
+        flex: 0 0 auto !important;
       }
-      .rcg-edge-icon{ display:inline-flex; gap:4px; width:26px; height:26px; flex:0 0 auto; align-items:center; justify-content:center; }
-      .rcg-edge-icon .line{ display:inline-block; height:18px; }
-      .rcg-edge-icon .thin{ width:3px; background:#111; }
-      .rcg-edge-icon .thick{ width:6px; background:var(--rcg-yellow); }
-      .rcg-edge-status .txt .t{ font-weight:900; font-size:13px; color:#111; line-height:1.1; }
-      .rcg-edge-status .txt .s{ margin-top:2px; font-weight:600; font-size:12px; color:var(--rcg-muted); line-height:1.2; }
+      #rcg-zip{
+        width: 92px !important;
+        flex: 0 0 auto !important;
+      }
+    }
 
-      /* Callout */
-      .rcg-callout{
-        position:absolute; left:12px; top:12px;
-        background:#111; color:#fff;
-        padding:10px 12px;
-        font-weight:900; font-size:13px;
-        z-index:20; max-width:70%;
+    /* -----------------------------
+       DESKTOP
+    ----------------------------- */
+    @media (min-width:981px){
+      .rcg-modal{ display:none !important; }
+      .rcg-launch-wrap{ display:none !important; }
+
+      .rcg-preview{ height: clamp(340px, 48vh, 520px); flex:0 0 auto; }
+      .rcg-panel{
+        position:absolute;
+        right:16px; top:16px;
+        width:520px; max-width:min(520px, 92vw);
+        box-shadow:0 8px 20px rgba(0,0,0,.12);
+        z-index:50;
       }
 
-      /* Sinks UI */
-      .sink-controls{ display:flex; gap:10px; align-items:center; width:100%; }
-      #rcg-sink-select{ flex:1; min-width:220px; height:44px; }
-      #rcg-add-sink{ height:44px; width:44px; padding:0; }
-      .sink-chip{
-        display:flex; align-items:center; gap:8px;
-        padding:8px 12px; background:#fff; font-size:13px;
-        border:1px solid #cfcfcf; overflow:hidden;
+      .rcg-stepper{ display:none; }
+      #rcg-pane-label{ display:none; }
+
+      #rcg-pane-meta{
+        display:block;
+        font-size:18px !important;
+        font-weight:300 !important;
+        letter-spacing:0.2px;
+        color:#111;
+        white-space:nowrap;
       }
-      .sink-chip button{
-        border:1px solid #000; background:#fff; cursor:pointer;
-        width:28px; height:28px; line-height:26px; font-weight:900;
-      }
-      .sink-chip .rcg-input{ width:96px; height:36px; }
-      .sink-chip select[data-spread]{ width:64px; height:36px; }
 
-@media (max-width:980px){
-  .rcg-dimrow .rcg-label{
-    white-space: nowrap;
-  }
+      #rcg-color-link{ position:relative; top:1px; }
+    }
+  `;
 
-}
-
-@media (max-width:980px){
-  /* remove spacing between the two stepper buttons */
-  .rcg-dimrow,
-  .rcg-polygrp{
-    column-gap: 0 !important;
-  }
-
-  /* specifically add back spacing between label and input */
-  .rcg-dimrow .rcg-input,
-  .rcg-polygrp .rcg-input{
-    margin-right: 8px; /* keeps breathing room before the steppers */
-  }
-
-  /* make the stepper pair look like one control */
-  .rcg-stepper{
-    margin-left: 0 !important;
-  }
-  .rcg-stepper + .rcg-stepper{
-    border-left: 0 !important; /* shared stroke line */
-  }
-}
-
-@media (max-width:980px){
-  /* tighten polygon inputs */
-  #dim-N{ width: 56px !important; }  /* two digits */
-  #dim-A{ width: 92px !important; }  /* e.g. 30.00 */
-}
-
-@media (max-width:980px){
-  /* Uniform label column width across all dim rows */
-  .rcg-dimrow{
-    grid-template-columns: 108px 1fr auto auto !important;
-    align-items:center;
-  }
-  .rcg-dimrow .rcg-label{
-    white-space: nowrap;
-    line-height: 1;
-  }
-}
-
-
-      /* Step 1 mobile steppers */
-      /* Step 1 mobile steppers */
-@media (max-width:980px){
-  #rcg-dims{ display:flex; flex-direction:column; gap:12px; align-items:stretch; }
-
-  .rcg-dimrow{
-    display:grid;
-    grid-template-columns: 108px 1fr auto auto;
-    gap:8px;
-    align-items:center;
-  }
-  .rcg-dimrow .rcg-label{ white-space:nowrap; line-height:1; }
-
-  .rcg-stepper{
-    height:40px;
-    width:40px;
-    border:1px solid #000;
-    background:#fff;
-    font-weight:900;
-    cursor:pointer;
-    font-size:16px;
-    line-height:1;
-  }
-
-  /* make stepper pair look like one control */
-  .rcg-dimrow{ column-gap:0 !important; }
-  .rcg-dimrow .rcg-input{ margin-right:8px; }
-  .rcg-stepper{ margin-left:0 !important; }
-  .rcg-stepper + .rcg-stepper{ border-left:0 !important; }
-
-  /* Mobile step transitions */
-  .rcg-step{ animation: rcgSlideIn .18s ease-out; }
-  @keyframes rcgSlideIn{
-    from{ transform: translateX(14px); opacity: 0; }
-    to{ transform: translateX(0); opacity: 1; }
-  }
-
-  /* Mobile spacing / "air" */
-  .rcg-panel{ padding:12px; }
-  .rcg-title{ margin-top:14px; margin-bottom:10px; }
-  #rcg-step2 .rcg-edge-status{ margin-top:18px; }
-  #rcg-step3 .sink-controls{ margin-top:18px; }
-  #rcg-step4 #rcg-stone-zip-row{ margin-top:18px; }
-
-  /* Mobile: back button 1px down to align with Next */
-  #rcg-back{ position:relative; top:1px; }
-
-  /* Mobile final step: force Stone + ZIP on same row */
-  #rcg-stone-zip-row{
-    flex-wrap: nowrap !important;
-    gap: 8px !important;
-    align-items:center;
-  }
-  #rcg-stone-zip-row label{ white-space: nowrap; }
-  #rcg-color{
-    min-width: 140px !important;
-    width: 140px !important;
-    flex: 0 0 auto !important;
-  }
-  #rcg-zip{
-    width: 92px !important;
-    flex: 0 0 auto !important;
-  }
-
-  /* ✅ Mobile layout: hide inline host, show launcher */
-  .rcg-inline-host{ display:none; }
-  .rcg-launch-wrap{ display:flex; }
-
-  .rcg-window{ height:100dvh; }
-  .rcg-modal-body{ height: calc(100dvh - 64px); overflow:hidden; }
-  .rcg-app, .rcg-body{ height:100%; min-height:0; }
-  .rcg-preview{ padding-bottom: calc(var(--rcg-sheet-h, 0px) + 10px); }
-
-  .rcg-panel{
-    position:absolute;
-    left:0; right:0; bottom:0;
-    height:56dvh;
-    max-height:62dvh;
-    overflow:auto;
-    border-top:2px solid #ddd;
-    padding-bottom: calc(12px + env(safe-area-inset-bottom));
-  }
-
-  .rcg-topbar{
-    display:grid;
-    grid-template-columns:64px 1fr 64px;
-    align-items:center;
-  }
-  .rcg-topbar .meta{ justify-self:center; font-size:14px; font-weight:900; }
-  .rcg-logo{ width:62px; height:62px; }
-
-  #rcg-pane-meta{ display:none; }
-  #rcg-pane-label{
-    font-weight:900;
-    font-size:14px;
-    line-height:1.15;
-    color:#111;
-    max-width:52vw;
-    white-space:normal;
-  }
-}
-
-/* Desktop layout */
-@media (min-width:981px){
-  .rcg-modal{ display:none !important; }
-  .rcg-launch-wrap{ display:none !important; }
-
-  .rcg-preview{ height: clamp(340px, 48vh, 520px); flex:0 0 auto; }
-  .rcg-panel{
-    position:absolute;
-    right:16px; top:16px;
-    width:520px; max-width:min(520px, 92vw);
-    box-shadow:0 8px 20px rgba(0,0,0,.12);
-    z-index:50;
-  }
-
-  .rcg-stepper{ display:none; }
-  #rcg-pane-label{ display:none; }
-
-  #rcg-pane-meta{
-    display:block;
-    font-size:18px !important;
-    font-weight:300 !important;
-    letter-spacing:0.2px;
-    color:#111;
-    white-space:nowrap;
-  }
-
-  /* Desktop baseline nudge for link */
-  #rcg-color-link{ position:relative; top:1px; }
-}
-
+  mount.innerHTML = `
+    <style>${CSS}</style>
 
     <div class="rcg-root">
       <div class="rcg-launch-wrap">
@@ -531,9 +512,12 @@
               <img class="rcg-logo ${LOGO_URL ? 'rcg-has':''}" ${LOGO_URL ? `src="${LOGO_URL}"` : ''} alt="">
               <div style="position:absolute;left:-9999px;">Rock Creek Granite</div>
             </div>
+
             <div class="meta" id="rcg-stepper-top">Step 1 of 4</div>
+
             <button class="rcg-close" id="rcg-close" aria-label="Close">✕</button>
           </div>
+
           <div class="rcg-modal-body" id="rcg-modal-body"></div>
         </div>
       </div>
@@ -541,7 +525,7 @@
   `;
 
   // -----------------------------
-  // Build app DOM
+  // Build ONE app DOM (moved between inline & modal)
   // -----------------------------
   function appHTML() {
     return `
@@ -635,10 +619,10 @@
   }
 
   const inlineHost = el('#rcg-inline-host', mount);
-  const modal = el('#rcg-modal', mount);
-  const modalBody = el('#rcg-modal-body', mount);
-  const openBtn = el('#rcg-open', mount);
-  const closeBtn = el('#rcg-close', mount);
+  const modal      = el('#rcg-modal', mount);
+  const modalBody  = el('#rcg-modal-body', mount);
+  const openBtn    = el('#rcg-open', mount);
+  const closeBtn   = el('#rcg-close', mount);
 
   const appWrap = document.createElement('div');
   appWrap.innerHTML = appHTML();
@@ -651,20 +635,19 @@
     if (!modalBody.contains(appRoot)) modalBody.appendChild(appRoot);
   }
   function detachApp() {
-  if (inlineHost && inlineHost.contains(appRoot)) inlineHost.removeChild(appRoot);
-  if (modalBody && modalBody.contains(appRoot)) modalBody.removeChild(appRoot);
-}
-
+    if (inlineHost.contains(appRoot)) inlineHost.removeChild(appRoot);
+    if (modalBody.contains(appRoot)) modalBody.removeChild(appRoot);
+  }
 
   function openModal() {
-  detachApp();
-  attachAppToModal();
-  modal.setAttribute('aria-hidden', 'false');
-  document.documentElement.style.overflow = 'hidden';
-  document.body.style.overflow = 'hidden';
-  syncMobilePreviewInset();
-  drawShape(); // optional but helps after remount
-}
+    detachApp();
+    attachAppToModal();
+    modal.setAttribute('aria-hidden', 'false');
+    document.documentElement.style.overflow = 'hidden';
+    document.body.style.overflow = 'hidden';
+    syncMobilePreviewInset();
+    drawShape();
+  }
 
   function closeModal() {
     modal.setAttribute('aria-hidden', 'true');
@@ -673,26 +656,19 @@
   }
 
   function syncMode() {
-  if (isDesktop()) {
-    // desktop = always inline
-    closeModal();
-    detachApp();
-    attachAppToDesktop();
-    setHandleMode();
-    const preview = el('.rcg-preview', appRoot);
-    if (preview) preview.style.removeProperty('--rcg-sheet-h');
-  } else {
-    // mobile = never inline (modal only)
-    detachApp();
-    setHandleMode();
+    if (isDesktop()) {
+      closeModal();
+      detachApp();
+      attachAppToDesktop();
+      setHandleMode();
+      const preview = el('.rcg-preview', appRoot);
+      if (preview) preview.style.removeProperty('--rcg-sheet-h');
+    } else {
+      // mobile: do not mount inline; modal only
+      detachApp();
+      setHandleMode();
+    }
   }
-}
-
-
-  // Desktop default mount
-// Mount correctly based on breakpoint
-syncMode();
-
 
   if (openBtn) openBtn.addEventListener('click', () => { if (isMobile()) openModal(); });
   if (closeBtn) closeBtn.addEventListener('click', closeModal);
@@ -839,11 +815,11 @@ syncMode();
     const stepEl = el(`#rcg-step${stepId}`, appRoot);
     if (stepEl) stepEl.classList.remove('rcg-hidden');
 
-    // instruction title
+    // instruction
     const visibleInstr = el(`#rcg-instr-${stepId}`, appRoot);
     if (visibleInstr) visibleInstr.textContent = STEP_INSTRUCTIONS[stepId] || '';
 
-    // top stepper
+    // top stepper (modal header)
     const top = el('#rcg-stepper-top', mount);
     const idx = stepIndex();
     const total = stepTotal();
@@ -851,19 +827,16 @@ syncMode();
 
     // pane header
     const paneLabel = el('#rcg-pane-label', appRoot);
-    const paneMeta = el('#rcg-pane-meta', appRoot);
+    const paneMeta  = el('#rcg-pane-meta', appRoot);
 
     if (isDesktop()) {
-      // ✅ Desktop: remove redundancy; show just "Step X"
       if (paneMeta) paneMeta.textContent = `Step ${idx + 1}`;
       if (paneLabel) paneLabel.textContent = '';
     } else {
-      // ✅ Mobile: keep label text
       if (paneLabel) paneLabel.textContent = STEP_LABELS[stepId] || '';
       if (paneMeta) paneMeta.textContent = '';
     }
 
-    // entry hooks
     if (stepId === 2 && state.shape === 'rectangle') {
       initStep2DefaultsIfNeeded();
       updateEdgeStatusUI();
@@ -872,7 +845,7 @@ syncMode();
     }
     if (stepId === 4) updateColorLink();
 
-    // mobile-only disclosure tweak for sink step
+    // mobile-only sink disclosure shorter
     const sinkDisclosure = el('#rcg-sink-disclosure', appRoot);
     if (sinkDisclosure && isMobile()) {
       sinkDisclosure.textContent = `Sinks must be ≥ ${MIN_SINK_EDGE}" from edges and ≥ ${MIN_SINK_GAP}" from each other.`;
@@ -912,7 +885,56 @@ syncMode();
       const sMax = MAX_DIAM * Math.sin(Math.PI / n);
       state.dims = { n, A: clamp(A || 12, 1, sMax) };
     }
+
     state.area = areaSqft(state.shape, state.dims);
+  }
+
+  function bindSteppers(container) {
+    els('[data-stepper]', container).forEach(btn => {
+      btn.addEventListener('click', () => {
+        const code = btn.getAttribute('data-stepper'); // +L, -D, etc
+        const dir = code[0] === '+' ? 1 : -1;
+        const which = code.slice(1);
+
+        const input = el(`#dim-${which}`, appRoot);
+        if (!input) return;
+
+        const cur = parseFloat(input.value || '0') || 0;
+
+        // step sizes
+        let step = 1.5;
+        if (which === 'N') step = 1;
+        if (which === 'A') step = 0.5;
+
+        // max bounds
+        let max = parseFloat(input.max || '999999');
+        if (which === 'L') max = MAX_LEN;
+        if (which === 'W') max = MAX_WID;
+        if (which === 'D') max = MAX_DIAM;
+
+        let next = cur + dir * step;
+
+        if (which === 'N') {
+          next = clamp(next, 5, 18);
+          input.value = String(Math.round(next));
+          // update A max when N changes
+          const nNow = clamp(parseInt(input.value || '6', 10), 5, 18);
+          const sMaxNow = (MAX_DIAM * Math.sin(Math.PI / nNow)).toFixed(2);
+          const a = el('#dim-A', appRoot);
+          if (a) {
+            a.max = sMaxNow;
+            if (parseFloat(a.value) > parseFloat(sMaxNow)) a.value = sMaxNow;
+          }
+        } else {
+          next = clamp(next, 1, max);
+          input.value = fmt2(next);
+        }
+
+        readDims();
+        updateSizeDisclosure();
+        drawShape();
+      });
+    });
   }
 
   function buildDimInputs() {
@@ -941,138 +963,61 @@ syncMode();
             <button class="rcg-stepper" data-stepper="+W" type="button">+</button>
           </div>
         `;
-
-        // rectangle steppers: 1.5"
-        els('[data-stepper]', h).forEach(btn => {
-          btn.addEventListener('click', () => {
-            const code = btn.getAttribute('data-stepper');
-            const dir = code[0] === '+' ? 1 : -1;
-            const which = code.slice(1);
-
-            const input = el(`#dim-${which}`, appRoot);
-            if (!input) return;
-
-            const cur = parseFloat(input.value || '0') || 0;
-            const max = (which === 'L') ? MAX_LEN : MAX_WID;
-            const next = clamp(cur + dir * 1.5, 1, max);
-
-            input.value = fmt2(next);
-            readDims();
-            updateSizeDisclosure();
-            drawShape();
-          });
-        });
+        bindSteppers(h);
       } else {
         h.innerHTML = `
           <label class="rcg-label">Length (in)</label>
           <input class="rcg-input" id="dim-L" type="number" step="0.125" min="1" max="${MAX_LEN}" value="${fmt2(state.dims.L || 36)}">
-
           <label class="rcg-label">Width (in)</label>
           <input class="rcg-input" id="dim-W" type="number" step="0.125" min="1" max="${MAX_WID}" value="${fmt2(state.dims.W || 25.5)}">
         `;
       }
     } else if (state.shape === 'circle') {
-  if (isMobile()) {
-    h.innerHTML = `
-      <div class="rcg-dimrow">
-        <label class="rcg-label">Diameter (in)</label>
-        <input class="rcg-input" id="dim-D" type="number" step="0.125" min="1" max="${MAX_DIAM}" value="${fmt2(state.dims.D || 30)}">
-        <button class="rcg-stepper" data-stepper="-D" type="button">−</button>
-        <button class="rcg-stepper" data-stepper="+D" type="button">+</button>
-      </div>
-    `;
-
-    // circle steppers: 1.5"
-    els('[data-stepper]', h).forEach(btn => {
-      btn.addEventListener('click', () => {
-        const code = btn.getAttribute('data-stepper'); // +D / -D
-        const dir = code[0] === '+' ? 1 : -1;
-
-        const input = el('#dim-D', appRoot);
-        if (!input) return;
-
-        const cur = parseFloat(input.value || '0') || 0;
-        const next = clamp(cur + dir * 1.5, 1, MAX_DIAM);
-
-        input.value = fmt2(next);
-        readDims();
-        updateSizeDisclosure();
-        drawShape();
-      });
-    });
-  } else {
-    h.innerHTML = `
-      <label class="rcg-label">Diameter (in)</label>
-      <input class="rcg-input" id="dim-D" type="number" step="0.125" min="1" max="${MAX_DIAM}" value="${fmt2(state.dims.D || 30)}">
-    `;}
-
-
+      if (isMobile()) {
+        h.innerHTML = `
+          <div class="rcg-dimrow">
+            <label class="rcg-label">Diameter (in)</label>
+            <input class="rcg-input" id="dim-D" type="number" step="0.125" min="1" max="${MAX_DIAM}" value="${fmt2(state.dims.D || 30)}">
+            <button class="rcg-stepper" data-stepper="-D" type="button">−</button>
+            <button class="rcg-stepper" data-stepper="+D" type="button">+</button>
+          </div>
+        `;
+        bindSteppers(h);
+      } else {
+        h.innerHTML = `
+          <label class="rcg-label">Diameter (in)</label>
+          <input class="rcg-input" id="dim-D" type="number" step="0.125" min="1" max="${MAX_DIAM}" value="${fmt2(state.dims.D || 30)}">
+        `;
+      }
     } else {
       // polygon
       const n = clamp(state.dims.n || 6, 5, 18);
       const sMax = (MAX_DIAM * Math.sin(Math.PI / n)).toFixed(2);
 
       if (isMobile()) {
-  h.innerHTML = `
-    <div class="rcg-dimrow">
-      <label class="rcg-label">Sides</label>
-      <input class="rcg-input" id="dim-N" type="number" step="1" min="5" max="18" value="${n}">
-      <button class="rcg-stepper" data-stepper="-N" type="button">−</button>
-      <button class="rcg-stepper" data-stepper="+N" type="button">+</button>
-    </div>
+        // stacked (fits reliably)
+        h.innerHTML = `
+          <div class="rcg-dimrow">
+            <label class="rcg-label">Sides</label>
+            <input class="rcg-input" id="dim-N" type="number" step="1" min="5" max="18" value="${n}">
+            <button class="rcg-stepper" data-stepper="-N" type="button">−</button>
+            <button class="rcg-stepper" data-stepper="+N" type="button">+</button>
+          </div>
 
-    <div class="rcg-dimrow">
-      <label class="rcg-label">Side</label>
-      <input class="rcg-input" id="dim-A" type="number" step="0.125" min="1" max="${sMax}" value="${fmt2(state.dims.A || 12)}">
-      <button class="rcg-stepper" data-stepper="-A" type="button">−</button>
-      <button class="rcg-stepper" data-stepper="+A" type="button">+</button>
-    </div>
-  `;
-
-  // polygon steppers: N +/-1, A +/-0.5"
-  els('[data-stepper]', h).forEach(btn => {
-    btn.addEventListener('click', () => {
-      const code = btn.getAttribute('data-stepper');
-      const dir = code[0] === '+' ? 1 : -1;
-      const which = code.slice(1);
-
-      const input = el(`#dim-${which}`, appRoot);
-      if (!input) return;
-
-      const cur = parseFloat(input.value || '0') || 0;
-
-      if (which === 'N') {
-        const next = clamp(cur + dir * 1, 5, 18);
-        input.value = String(Math.round(next));
-      } else {
-        const max = parseFloat(input.max || sMax) || parseFloat(sMax);
-        const next = clamp(cur + dir * 0.5, 1, max);
-        input.value = fmt2(next);
-      }
-
-      // update max-A if N changes
-      const nNow = clamp(parseInt(el('#dim-N', appRoot)?.value || '6', 10), 5, 18);
-      const sMaxNow = (MAX_DIAM * Math.sin(Math.PI / nNow)).toFixed(2);
-      const a = el('#dim-A', appRoot);
-      if (a) {
-        a.max = sMaxNow;
-        if (parseFloat(a.value) > parseFloat(sMaxNow)) a.value = sMaxNow;
-      }
-
-      readDims();
-      updateSizeDisclosure();
-      drawShape();
-    });
-  });
-
+          <div class="rcg-dimrow">
+            <label class="rcg-label">Side</label>
+            <input class="rcg-input" id="dim-A" type="number" step="0.125" min="1" max="${sMax}" value="${fmt2(state.dims.A || 12)}">
+            <button class="rcg-stepper" data-stepper="-A" type="button">−</button>
+            <button class="rcg-stepper" data-stepper="+A" type="button">+</button>
+          </div>
+        `;
+        bindSteppers(h);
       } else {
         h.innerHTML = `
           <label class="rcg-label">Sides</label>
           <input class="rcg-input" id="dim-N" type="number" step="1" min="5" max="18" value="${n}">
-
           <label class="rcg-label">Side (in)</label>
           <input class="rcg-input" id="dim-A" type="number" step="0.125" min="1" max="${sMax}" value="${fmt2(state.dims.A || 12)}">
-
         `;
       }
     }
@@ -1084,14 +1029,15 @@ syncMode();
         if (i && i.value !== '') i.value = fmt2(i.value);
       });
 
+      // polygon max update
       const nInput = el('#dim-N', appRoot);
       if (nInput) {
         const n = clamp(parseInt(nInput.value || '6', 10), 5, 18);
-        const sMax = (MAX_DIAM * Math.sin(Math.PI / n)).toFixed(2);
+        const sMaxNow = (MAX_DIAM * Math.sin(Math.PI / n)).toFixed(2);
         const a = el('#dim-A', appRoot);
         if (a) {
-          a.max = sMax;
-          if (parseFloat(a.value) > parseFloat(sMax)) a.value = sMax;
+          a.max = sMaxNow;
+          if (parseFloat(a.value) > parseFloat(sMaxNow)) a.value = sMaxNow;
         }
       }
 
@@ -1108,14 +1054,18 @@ syncMode();
   // Shape icons
   // -----------------------------
   const ICONS = ['square', 'circle', 'polygon'];
+
   function isoIcon(name) {
     if (name === 'square')  return '<svg viewBox="0 0 64 32"><path d="M14 10 L34 5 L54 10 L34 15 Z"/><path d="M14 10 L14 24 L34 29 L34 15 M54 10 L54 24 L34 29"/></svg>';
     if (name === 'circle')  return '<svg viewBox="0 0 64 32"><ellipse cx="32" cy="10" rx="18" ry="5"/><path d="M14 10 v10 c0 4 8 7 18 7 s18-3 18-7 V10"/></svg>';
     return '<svg viewBox="0 0 64 32"><path d="M40 5l12 6-11 5H25L14 11 26 5Zl12 6V22L41 28H25L14 22V11l11 5V28H41V16"/></svg>';
   }
+
   function renderShapeIcons(container) {
     if (!container) return;
-    container.innerHTML = ICONS.map(s => `<button class="shape-iso" data-icon="${s}" aria-label="${s}">${isoIcon(s)}</button>`).join('');
+    container.innerHTML = ICONS
+      .map(s => `<button class="shape-iso" data-icon="${s}" aria-label="${s}">${isoIcon(s)}</button>`)
+      .join('');
     els('[data-icon]', container).forEach(btn => btn.onclick = () => setShapeFromIcon(btn.dataset.icon));
   }
 
@@ -1158,6 +1108,7 @@ syncMode();
 
   defs.appendChild(clip);
   svg.append(defs, gridG, imageG, shapeG, sinksG, sinkDimsG, edgesG, hotG, dimsG);
+
   dimsG.setAttribute('pointer-events', 'none');
   sinkDimsG.setAttribute('pointer-events', 'none');
 
@@ -1207,11 +1158,11 @@ syncMode();
     const wpx = widthIn * s;
     const hpx = heightIn * s;
 
-    // ✅ true centered, bounded so it cannot crop (fixes desktop “bottom cutoff”)
+    // true centered + bounded so it can't crop
     const cx = clamp((1400 - wpx) / 2, pad, 1400 - wpx - pad);
     const cy = clamp((600  - hpx) / 2, pad, 600  - hpx - pad);
 
-    return { s, cx, cy, widthIn, heightIn, wpx, hpx, pad };
+    return { s, cx, cy, widthIn, heightIn, wpx, hpx };
   }
 
   function label(text, x, y) {
@@ -1281,13 +1232,8 @@ syncMode();
 
   function svgPoint(evt) {
     const p = svg.createSVGPoint();
-    if (evt.touches && evt.touches[0]) {
-      p.x = evt.touches[0].clientX;
-      p.y = evt.touches[0].clientY;
-    } else {
-      p.x = evt.clientX;
-      p.y = evt.clientY;
-    }
+    p.x = evt.clientX;
+    p.y = evt.clientY;
     return p.matrixTransform(svg.getScreenCTM().inverse());
   }
 
@@ -1302,7 +1248,7 @@ syncMode();
 
     if (!state.shape) return;
 
-    const { s, cx, cy, widthIn, heightIn, wpx, hpx } = getScale();
+    const { s, cx, cy, widthIn, wpx, hpx } = getScale();
     let pathEl;
     let bbox = { x: cx, y: cy, width: wpx, height: hpx };
 
@@ -1334,42 +1280,38 @@ syncMode();
       bbox = { x: minx, y: miny, width: maxx - minx, height: maxy - miny };
     }
 
+    // clip for stone texture
     clip.innerHTML = '';
     clip.appendChild(pathEl.cloneNode(true));
 
-    // ✅ Step 4 true cutout masking (rectangle + sinks)
     const showTexture = (state.stepId === 4 && !!state.color);
     const needsCutMask = showTexture && state.shape === 'rectangle' && state.sinks.length > 0;
 
     let maskId = null;
     if (needsCutMask) {
       maskId = 'rcgSinkCutMask';
-      // remove old mask if present
-      const old = el(`#${maskId}`, defs);
+      const old = defs.querySelector(`#${maskId}`);
       if (old) old.remove();
 
       const mask = document.createElementNS(ns, 'mask');
       mask.setAttribute('id', maskId);
 
-      // white = visible
       const full = document.createElementNS(ns, 'rect');
       full.setAttribute('x', '0'); full.setAttribute('y', '0');
       full.setAttribute('width', '1400'); full.setAttribute('height', '600');
       full.setAttribute('fill', '#fff');
       mask.appendChild(full);
 
-      // black sink shapes = punched out (transparent)
-      const { s:sc } = getScale();
       const rectX = bbox.x, rectY = bbox.y;
 
       state.sinks.forEach((snk) => {
         const tpl = SINK_TEMPLATES[snk.key]; if (!tpl) return;
         const halfW = tpl.w / 2, halfH = tpl.h / 2;
 
-        const sinkLeft = rectX + (snk.x - halfW) * sc;
-        const sinkTop  = rectY + (snk.y - halfH) * sc;
-        const sinkWpx  = tpl.w * sc;
-        const sinkHpx  = tpl.h * sc;
+        const sinkLeft = rectX + (snk.x - halfW) * s;
+        const sinkTop  = rectY + (snk.y - halfH) * s;
+        const sinkWpx  = tpl.w * s;
+        const sinkHpx  = tpl.h * s;
 
         let cut;
         if (tpl.shape === 'oval') {
@@ -1413,7 +1355,7 @@ syncMode();
     outline.setAttribute('stroke-width', '2');
     shapeG.appendChild(outline);
 
-    // dimension labels
+    // labels
     if (state.shape === 'rectangle') {
       const inset = isMobile() ? 26 : 18;
       label(`${fmt2(state.dims.L || 0)}" (L)`, bbox.x + bbox.width / 2, bbox.y + inset);
@@ -1424,11 +1366,10 @@ syncMode();
       label(`${state.dims.n || 6}-sides, ${fmt2(state.dims.A || 0)}" side`, bbox.x + bbox.width / 2, Math.max(28, bbox.y - 20));
     }
 
-    // rectangle edges (step 2 only)
+    // edges + hot zones (step 2 only)
     if (state.shape === 'rectangle') {
       const ex = bbox.x, ey = bbox.y, ew = bbox.width, eh = bbox.height;
 
-      // ✅ easier tapping on mobile: larger bands
       const band = isMobile()
         ? Math.max(64, Math.min(110, Math.min(ew, eh) * 0.30))
         : Math.max(32, Math.min(72, Math.min(ew, eh) * 0.22));
@@ -1484,7 +1425,7 @@ syncMode();
       }
     }
 
-    // sinks + sink clearance labels (rectangle only)
+    // sinks + faucet holes + drag (rect only)
     if (state.shape === 'rectangle' && state.sinks.length) {
       const toPx = v => v * s;
       const rectX = bbox.x, rectY = bbox.y;
@@ -1526,18 +1467,17 @@ syncMode();
           node.setAttribute('stroke', 'var(--rcg-yellow)');
           node.setAttribute('stroke-width', isMobile() ? '6' : '5');
         } else {
-          // Step 4: outline stays, true cutout is handled by mask on the image
           node.setAttribute('fill', 'none');
           node.setAttribute('stroke', '#111');
           node.setAttribute('stroke-width', isMobile() ? '3' : '2');
         }
 
         node.setAttribute('pointer-events', 'all');
-        node.style.cursor = 'grab';
+        node.style.cursor = onStep3 ? 'grab' : 'default';
         node.style.touchAction = 'none';
         sinksG.appendChild(node);
 
-        // Faucet holes (visible)
+        // faucet holes
         const holeR = toPx(1.25 / 2);
         const centerX = sinkLeft + sinkWpx/2;
         const holeY = sinkTop - toPx(2);
@@ -1549,6 +1489,7 @@ syncMode();
         } else {
           holes.push([centerX, holeY]);
         }
+
         holes.forEach(([hx, hy]) => {
           const c = document.createElementNS(ns, 'circle');
           c.setAttribute('cx', hx);
@@ -1560,7 +1501,7 @@ syncMode();
           sinksG.appendChild(c);
         });
 
-        // Sink clearance dimensions (Step 3 only)
+        // step 3 clearance dims
         if (state.stepId === 3) {
           const L = state.dims.L;
           const W = state.dims.W;
@@ -1575,21 +1516,21 @@ syncMode();
 
           const off = isMobile() ? 18 : 12;
 
-          {
+          { // left
             const y = sinkBottom + off;
             dimLine(pieceLeft, y, sinkLeft, y);
             tick(pieceLeft, y - 6, pieceLeft, y + 6);
             tick(sinkLeft, y - 6, sinkLeft, y + 6);
             dimText(`${fmt2(leftClrIn)}"`, (pieceLeft + sinkLeft)/2, y - (isMobile()? 18 : 12));
           }
-          {
+          { // right
             const y = sinkBottom + off;
             dimLine(sinkRight, y, pieceRight, y);
             tick(sinkRight, y - 6, sinkRight, y + 6);
             tick(pieceRight, y - 6, pieceRight, y + 6);
             dimText(`${fmt2(rightClrIn)}"`, (sinkRight + pieceRight)/2, y - (isMobile()? 18 : 12));
           }
-          {
+          { // bottom
             const x = sinkRight + (isMobile()? 22 : 14);
             dimLine(x, sinkBottom, x, pieceBottom);
             tick(x - 6, sinkBottom, x + 6, sinkBottom);
@@ -1598,7 +1539,7 @@ syncMode();
           }
         }
 
-        // Dragging
+        // dragging (step 3 only)
         node.addEventListener('pointerdown', (e) => {
           if (state.stepId !== 3) return;
           e.preventDefault();
@@ -1799,6 +1740,7 @@ syncMode();
 
     const key = selSink.value;
     const tpl = SINK_TEMPLATES[key];
+
     if (!sinkFits(tpl)) return alert('That sink will not fit this piece with 4" edge clearance.');
     if (state.sinks.length === 1 && !canPlaceSecond(tpl)) return alert('There is not enough room to add a second sink with required clearances.');
     if (state.sinks.length >= 2) return alert('You can add up to 2 sinks.');
@@ -2015,7 +1957,7 @@ syncMode();
   }
 
   // -----------------------------
-  // Desktop: draggable panel
+  // Desktop: draggable panel (enable flag only)
   // -----------------------------
   const panel = el('#rcg-panel', appRoot);
   const handle = el('#rcg-panel-handle', appRoot);
@@ -2088,7 +2030,7 @@ syncMode();
   })();
 
   // -----------------------------
-  // Mobile preview inset
+  // Mobile preview inset (ResizeObserver)
   // -----------------------------
   let ro = null;
   function syncMobilePreviewInset() {
@@ -2156,23 +2098,37 @@ syncMode();
     if (e.target && e.target.id === 'rcg-zip') updateNav();
   });
 
-  window.addEventListener('resize', () => { setHandleMode(); syncMobilePreviewInset(); syncMode(); });
+  window.addEventListener('resize', () => {
+    setHandleMode();
+    syncMobilePreviewInset();
+    syncMode();
+  });
 
   // -----------------------------
-  // Bootstrap
+  // Init
   // -----------------------------
   function bootstrap() {
     renderShapeIcons(el('#shape-icons', appRoot));
     setHandleMode();
+
+    // default shape
     setShapeFromIcon('square');
+
     refreshSinkPills();
     syncMobilePreviewInset();
+
+    // mount correct mode
     syncMode();
   }
 
+  // start
   requestAnimationFrame(() => {
-    if ('requestIdleCallback' in window) requestIdleCallback(bootstrap, { timeout: 800 });
-    else setTimeout(bootstrap, 0);
+    try {
+      if ('requestIdleCallback' in window) requestIdleCallback(bootstrap, { timeout: 800 });
+      else setTimeout(bootstrap, 0);
+    } catch (e) {
+      console.error('[RCG] bootstrap failed', e);
+    }
   });
 
 })();
