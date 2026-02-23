@@ -385,81 +385,121 @@
 
 
       /* Step 1 mobile steppers */
-      @media (max-width:980px){
-        #rcg-dims{ display:flex; flex-direction:column; gap:12px; align-items:stretch; }
+      /* Step 1 mobile steppers */
+@media (max-width:980px){
+  #rcg-dims{ display:flex; flex-direction:column; gap:12px; align-items:stretch; }
 
-        .rcg-dimrow{
-          display:grid;
-          grid-template-columns: 96px 1fr auto auto;
-          gap:8px;
-          align-items:center;
-        }
-        .rcg-stepper{
-          height:40px;
-          width:40px;
-          border:1px solid #000;
-          background:#fff;
-          font-weight:900;
-          cursor:pointer;
-          font-size:16px;
-          line-height:1;
-        }
+  .rcg-dimrow{
+    display:grid;
+    grid-template-columns: 108px 1fr auto auto;
+    gap:8px;
+    align-items:center;
+  }
+  .rcg-dimrow .rcg-label{ white-space:nowrap; line-height:1; }
 
+  .rcg-stepper{
+    height:40px;
+    width:40px;
+    border:1px solid #000;
+    background:#fff;
+    font-weight:900;
+    cursor:pointer;
+    font-size:16px;
+    line-height:1;
+  }
+
+  /* make stepper pair look like one control */
+  .rcg-dimrow{ column-gap:0 !important; }
+  .rcg-dimrow .rcg-input{ margin-right:8px; }
+  .rcg-stepper{ margin-left:0 !important; }
+  .rcg-stepper + .rcg-stepper{ border-left:0 !important; }
+
+  /* Mobile step transitions */
+  .rcg-step{ animation: rcgSlideIn .18s ease-out; }
+  @keyframes rcgSlideIn{
+    from{ transform: translateX(14px); opacity: 0; }
+    to{ transform: translateX(0); opacity: 1; }
+  }
+
+  /* Mobile spacing / "air" */
+  .rcg-panel{ padding:12px; }
+  .rcg-title{ margin-top:14px; margin-bottom:10px; }
+  #rcg-step2 .rcg-edge-status{ margin-top:18px; }
+  #rcg-step3 .sink-controls{ margin-top:18px; }
+  #rcg-step4 #rcg-stone-zip-row{ margin-top:18px; }
+
+  /* Mobile: back button 1px down to align with Next */
+  #rcg-back{ position:relative; top:1px; }
+
+  /* Mobile final step: force Stone + ZIP on same row */
+  #rcg-stone-zip-row{
+    flex-wrap: nowrap !important;
+    gap: 8px !important;
+    align-items:center;
+  }
+  #rcg-stone-zip-row label{ white-space: nowrap; }
+  #rcg-color{
+    min-width: 140px !important;
+    width: 140px !important;
+    flex: 0 0 auto !important;
+  }
+  #rcg-zip{
+    width: 92px !important;
+    flex: 0 0 auto !important;
+  }
+
+  /* ✅ Mobile layout: hide inline host, show launcher */
+  .rcg-inline-host{ display:none; }
+  .rcg-launch-wrap{ display:flex; }
+
+  .rcg-window{ height:100dvh; }
+  .rcg-modal-body{ height: calc(100dvh - 64px); overflow:hidden; }
+  .rcg-app, .rcg-body{ height:100%; min-height:0; }
+  .rcg-preview{ padding-bottom: calc(var(--rcg-sheet-h, 0px) + 10px); }
+
+  .rcg-panel{
+    position:absolute;
+    left:0; right:0; bottom:0;
+    height:56dvh;
+    max-height:62dvh;
+    overflow:auto;
+    border-top:2px solid #ddd;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+  }
+
+  .rcg-topbar{
+    display:grid;
+    grid-template-columns:64px 1fr 64px;
+    align-items:center;
+  }
+  .rcg-topbar .meta{ justify-self:center; font-size:14px; font-weight:900; }
+  .rcg-logo{ width:62px; height:62px; }
+
+  #rcg-pane-meta{ display:none; }
+  #rcg-pane-label{
+    font-weight:900;
+    font-size:14px;
+    line-height:1.15;
+    color:#111;
+    max-width:52vw;
+    white-space:normal;
+  }
 }
 
-        /* Mobile step transitions (restored) */
-        .rcg-step{ animation: rcgSlideIn .18s ease-out; }
-        @keyframes rcgSlideIn{
-          from{ transform: translateX(14px); opacity: 0; }
-          to{ transform: translateX(0); opacity: 1; }
-        }
+/* Desktop layout */
+@media (min-width:981px){
+  .rcg-modal{ display:none !important; }
+  .rcg-launch-wrap{ display:none !important; }
 
-        /* Mobile spacing / "air" */
-        .rcg-panel{ padding: 12px; }
-        .rcg-title{ margin-top: 14px; margin-bottom: 10px; }
-        #rcg-step2 .rcg-edge-status{ margin-top: 18px; }
-        #rcg-step3 .sink-controls{ margin-top: 18px; }
-        #rcg-step4 #rcg-stone-zip-row{ margin-top: 18px; }
+  .rcg-preview{ height: clamp(340px, 48vh, 520px); flex:0 0 auto; }
+  .rcg-panel{
+    position:absolute;
+    right:16px; top:16px;
+    width:520px; max-width:min(520px, 92vw);
+    box-shadow:0 8px 20px rgba(0,0,0,.12);
+    z-index:50;
+  }
 
-        /* Mobile: back button 1px down to align with Next */
-        #rcg-back{ position:relative; top:1px; }
-
-        /* Mobile final step: force Stone + ZIP on same row */
-        #rcg-stone-zip-row{
-          flex-wrap: nowrap !important;
-          gap: 8px !important;
-          align-items:center;
-        }
-        #rcg-stone-zip-row label{ white-space: nowrap; }
-        #rcg-color{
-          min-width: 140px !important;
-          width: 140px !important;
-          flex: 0 0 auto !important;
-        }
-        #rcg-zip{
-          width: 92px !important;
-          flex: 0 0 auto !important;
-        }
-      }
-
-      @media (min-width:981px){
-        .rcg-stepper{ display:none; }
-      }
-
-      /* Desktop layout */
-      @media (min-width:981px){
-        .rcg-modal{ display:none !important; }
-        .rcg-launch-wrap{ display:none !important; }
-        .rcg-preview{ height: clamp(340px, 48vh, 520px); flex:0 0 auto; }
-        .rcg-panel{
-          position:absolute;
-          right:16px; top:16px;
-          width:520px; max-width:min(520px, 92vw);
-          box-shadow:0 8px 20px rgba(0,0,0,.12);
-          z-index:50;
-        }
-        #rcg-pane-label{ display:none; }
-        @media (min-width:981px){
   .rcg-stepper{ display:none; }
   #rcg-pane-label{ display:none; }
 
@@ -476,35 +516,6 @@
   #rcg-color-link{ position:relative; top:1px; }
 }
 
-
-      /* Mobile layout */
-      @media (max-width:980px){
-        .rcg-inline-host{ display:none; }
-        .rcg-launch-wrap{ display:flex; }
-        .rcg-window{ height:100dvh; }
-        .rcg-modal-body{ height: calc(100dvh - 64px); overflow:hidden; }
-        .rcg-app, .rcg-body{ height:100%; min-height:0; }
-        .rcg-preview{ padding-bottom: calc(var(--rcg-sheet-h, 0px) + 10px); }
-        .rcg-panel{
-          position:absolute;
-          left:0; right:0; bottom:0;
-          height:56dvh;
-          max-height:62dvh;
-          overflow:auto;
-          border-top:2px solid #ddd;
-          padding-bottom: calc(12px + env(safe-area-inset-bottom));
-        }
-        .rcg-topbar{
-          display:grid;
-          grid-template-columns:64px 1fr 64px;
-          align-items:center;
-        }
-        .rcg-topbar .meta{ justify-self:center; font-size:14px; font-weight:900; }
-        .rcg-logo{ width:62px; height:62px; }
-        #rcg-pane-meta{ display:none; }
-        #rcg-pane-label{ font-weight:900; font-size:14px; line-height:1.15; color:#111; max-width:52vw; white-space:normal; }
-      }
-    </style>
 
     <div class="rcg-root">
       <div class="rcg-launch-wrap">
