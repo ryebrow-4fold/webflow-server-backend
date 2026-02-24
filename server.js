@@ -332,7 +332,6 @@ async function sendEmail({ to, bcc, subject, text, html, attachments = [], reply
     ...(attachments.length
       ? { attachments: attachments.map(a => ({ filename: a.filename, content: a.content })) }
       : {}),
-    headers: { 'List-Unsubscribe': `<mailto:${ORDER_NOTIFY_EMAIL}>` },
     tags: [{ name: 'rcg-order' }],
   };
 
@@ -568,7 +567,7 @@ if (isValidEmail(customerEmail)) {
 
     // Plain-text fallback (helps deliverability + non-HTML clients)
     const customerText =
-      `You're Rock'n! We got your order\n\n` +
+      `Order confirmation — Rock Creek Granite (#${shortId})\n` +
       `Order #: ${orderId}\n` +
       `Total: $${orderTotalUSD} ${currency}\n` +
       `Ship ZIP: ${config?.zip || md.zip || 'N/A'}\n` +
