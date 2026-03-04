@@ -15,11 +15,17 @@
   window.__RCG_CONFIGURATOR_MOUNTED__ = true;
 
   const mount = document.getElementById('rcg-configurator-launch');
-  if (!mount) return;
+if (!mount) return;
 
-  // Preloader: fade out immediately when JS starts
+// Grab preloader if present
 const preload = mount.querySelector('[data-rcg-preload]');
-if (preload) preload.classList.add('rcg-preload--done');
+if (preload) {
+  preload.classList.add('rcg-preload--done');
+  // Remove from DOM after fade (or immediately if you prefer)
+  preload.addEventListener('transitionend', () => preload.remove(), { once:true });
+  // Safety: remove even if transition never fires
+  setTimeout(() => { try { preload.remove(); } catch {} }, 350);
+}
 
   const LOGO_URL = mount.dataset.logo || '';
 
@@ -144,6 +150,28 @@ if (preload) preload.classList.add('rcg-preload--done');
       --rcg-muted:#6b7280;
       --rcg-danger:#c1121f;
     }
+
+    /* Ensure mount can host an overlay */
+#rcg-configurator-launch{ position:relative; }
+
+/* Preloader overlay */
+#rcg-configurator-launch [data-rcg-preload]{
+  position:absolute;
+  inset:0;
+  z-index:9999;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background:#fff;              /* or match your page */
+  transition: opacity .18s ease, transform .18s ease;
+}
+
+/* Fade state */
+#rcg-configurator-launch [data-rcg-preload].rcg-preload--done{
+  opacity:0;
+  transform: translateY(6px);
+  pointer-events:none;
+}
 
     .rcg-root, .rcg-root *{
       font-family:'Barlow', system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
