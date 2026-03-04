@@ -17,6 +17,10 @@
   const mount = document.getElementById('rcg-configurator-launch');
   if (!mount) return;
 
+  // Preloader: fade out immediately when JS starts
+const preload = mount.querySelector('[data-rcg-preload]');
+if (preload) preload.classList.add('rcg-preload--done');
+
   const LOGO_URL = mount.dataset.logo || '';
 
   // -----------------------------
