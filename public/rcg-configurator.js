@@ -1,5 +1,5 @@
 /* =============================
-   RCG CONFIGURATOR - PRODUCTION BUILD
+   RCG CONFIGURATOR - PRODUCTION BUILD v5
    - Mounts into: <div id="rcg-configurator-launch"></div>
    - Desktop: inline
    - Mobile: launch button -> fullscreen modal
@@ -725,7 +725,8 @@
     next.textContent = idx === stepTotal() - 1 ? 'Checkout' : 'Next';
     let disableNext = false;
     if (state.stepId === 4) {
-      const zip = (el('#rcg-zip', appRoot)?.value || '').trim();
+      const zipEl = el('#rcg-zip', appRoot);
+      const zip = (((zipEl && zipEl.value) || '')).trim();
       disableNext = !/^\d{5}$/.test(zip);
     }
     next.disabled = disableNext;
@@ -783,11 +784,16 @@
   }
 
   function readDims() {
-    const L = parseFloat(el('#dim-L', appRoot)?.value || 0);
-    const W = parseFloat(el('#dim-W', appRoot)?.value || 0);
-    const D = parseFloat(el('#dim-D', appRoot)?.value || 0);
-    const A = parseFloat(el('#dim-A', appRoot)?.value || 0);
-    const N = parseInt(el('#dim-N', appRoot)?.value || 0, 10);
+    const dimL = el('#dim-L', appRoot);
+    const L = parseFloat((dimL && dimL.value) || 0);
+    const dimW = el('#dim-W', appRoot);
+    const W = parseFloat((dimW && dimW.value) || 0);
+    const dimD = el('#dim-D', appRoot);
+    const D = parseFloat((dimD && dimD.value) || 0);
+    const dimA = el('#dim-A', appRoot);
+    const A = parseFloat((dimA && dimA.value) || 0);
+    const dimN = el('#dim-N', appRoot);
+    const N = parseInt((dimN && dimN.value) || 0, 10);
 
     if (state.shape === 'rectangle') state.dims = { L: clamp(L, 1, MAX_LEN), W: clamp(W, 1, MAX_WID) };
     else if (state.shape === 'circle') state.dims = { D: clamp(D, 1, MAX_DIAM) };
@@ -1619,7 +1625,8 @@
   }
 
   function currentConfig() {
-    const zip = (el('#rcg-zip', appRoot)?.value || '').trim();
+    const zipEl = el('#rcg-zip', appRoot);
+    const zip = (((zipEl && zipEl.value) || '')).trim();
     const p = computePricing(zip || ORIGIN_ZIP_DEFAULT);
     return {
       shape: state.shape,
@@ -1871,7 +1878,8 @@
     nextBtn.addEventListener('click', () => {
       if (nextBtn.disabled) return;
       if (state.stepId === 4) {
-        const zip = (el('#rcg-zip', appRoot)?.value || '').trim();
+        const zipEl = el('#rcg-zip', appRoot);
+        const zip = (((zipEl && zipEl.value) || '')).trim();
         if (!/^\d{5}$/.test(zip)) return;
         const payload = currentConfig();
         void emailDXFToOrders();
