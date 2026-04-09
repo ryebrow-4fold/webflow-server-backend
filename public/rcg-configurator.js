@@ -1824,10 +1824,12 @@
   })();
 
   let ro = null;
+  let insetFallbackTimer = null;
   function syncMobilePreviewInset() {
     const preview = el('.rcg-preview', appRoot);
     const panelEl = el('#rcg-panel', appRoot);
     if (!preview || !panelEl) return;
+
     const apply = () => {
       if (!isMobile()) {
         preview.style.removeProperty('--rcg-sheet-h');
@@ -1836,10 +1838,30 @@
       const h = panelEl.getBoundingClientRect().height || 0;
       preview.style.setProperty('--rcg-sheet-h', `${Math.ceil(h)}px`);
     };
+
     apply();
-    if (ro) ro.disconnect();
-    ro = new ResizeObserver(apply);
-    ro.observe(panelEl);
+
+    if (ro && typeof ro.disconnect === 'function') {
+      try { ro.disconnect(); } catch (err) {}
+    }
+    ro = null;
+
+    if (insetFallbackTimer) {
+      clearTimeout(insetFallbackTimer);
+      insetFallbackTimer = null;
+    }
+
+    if (typeof window.ResizeObserver === 'function') {
+      try {
+        ro = new window.ResizeObserver(apply);
+        ro.observe(panelEl);
+        return;
+      } catch (err) {
+        // fall through to timer-based fallback on iOS engines that expose ResizeObserver but fail at runtime
+      }
+    }
+
+    insetFallbackTimer = setTimeout(apply, 80);
   }
 
   const nextBtn = el('#rcg-next', appRoot);
@@ -1933,6 +1955,8 @@
     bootstrap();
   } catch (err) {
     console.error('[RCG] bootstrap failed', err);
-    failBoot('The configurator could not be initialized right now.');
+    const errName = err && err.name ? `${err.name}: ` : '';
+    const errMsg = err && err.message ? err.message : 'Unknown error';
+    failBoot(`The configurator could not be initialized right now. ${errName}${errMsg}`);
   }
 })();
