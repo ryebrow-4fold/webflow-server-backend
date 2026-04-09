@@ -23,9 +23,12 @@
 
   function emit(name, detail) {
     try {
-      const ev = new CustomEvent(name, { detail: detail || {} });
-      mount.dispatchEvent(ev);
-      window.dispatchEvent(ev);
+      mount.dispatchEvent(new CustomEvent(name, { detail: detail || {} }));
+    } catch (err) {
+      // no-op
+    }
+    try {
+      window.dispatchEvent(new CustomEvent(name, { detail: detail || {} }));
     } catch (err) {
       // no-op
     }
@@ -370,8 +373,8 @@
     @media (max-width:980px){
       .rcg-inline-host{ display:none; }
       .rcg-launch-wrap{ display:flex; }
-      .rcg-window{ height:100dvh; }
-      .rcg-modal-body{ height:calc(100dvh - 64px); overflow:hidden; }
+      .rcg-window{ height:100vh; height:100dvh; }
+      .rcg-modal-body{ height:calc(100vh - 64px); height:calc(100dvh - 64px); overflow:hidden; }
       .rcg-app, .rcg-body{ height:100%; min-height:0; }
       .rcg-preview{ padding-bottom:calc(var(--rcg-sheet-h, 0px) + 10px); }
       .rcg-panel{
