@@ -40,6 +40,14 @@ async function getCustomerEmailFromSession(session) {
   return null; // nothing found
 }
 
+function normalizeEmail(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function isValidEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizeEmail(value));
+}
+
 // ---------------------------- Boot guards & logging ----------------------------
 process.on('uncaughtException', (err) => {
   console.error('[FATAL] Uncaught exception:', err);
@@ -486,21 +494,28 @@ app.post(
 
           // ---- Friendly fields for emails ----
           const orderId = session.id;
+          const shortId = shortOrderId(orderId);
           const currency = String(session.currency || 'usd').toUpperCase();
           const orderTotalUSD = ((session.amount_total || 0) / 100).toFixed(2);
 
-          // NEW: robust customer email lookup (helper you added above)
-          // Also fall back to metadata if present.
-          const customerEmail =
-            (await getCustomerEmailFromSession(session)) ||
+          const sessionEmail = await getCustomerEmailFromSession(session);
+          const customerEmail = normalizeEmail(
+            sessionEmail ||
             md.customer_email ||
             md.email ||
-            '';
+            ''
+          );
+
+          console.log('[mail] resolved customer email', {
+            session_id: orderId,
+            customer_details_email: session?.customer_details?.email || null,
+            session_customer_email: session?.customer_email || null,
+            metadata_email: md?.email || md?.customer_email || null,
+            resolved: customerEmail || null,
+          });
 
           // ================== INTERNAL EMAIL (orders@) ==================
           try {
-  const shortId = orderId.replace('cs_test_', '').replace('cs_live_', '').slice(0, 10);
-
   const internalSubject =
     `${process.env.NODE_ENV === 'production' ? '' : '[TEST] '}New Order — ${shortId}`;
 
@@ -543,7 +558,9 @@ app.post(
     to: process.env.ORDER_NOTIFY_EMAIL || 'orders@rockcreekgranite.com',
     subject: internalSubject,
     html: internalHtml,
-    text: `New order ${shortId}\nCustomer: ${customerEmail}\nTotal: $${orderTotalUSD} ${currency}`,
+    text: `New order ${shortId}
+Customer: ${customerEmail || 'N/A'}
+Total: $${orderTotalUSD} ${currency}`,
     attachments: dxfAttachment ? [dxfAttachment] : [],
     replyTo: process.env.ORDER_NOTIFY_EMAIL || 'orders@rockcreekgranite.com',
   });
@@ -554,27 +571,28 @@ app.post(
 }
 
 // ================== CUSTOMER EMAIL (designed) ==================
-const isValidEmail = (s) => /.+@.+\..+/.test(String(s || '').trim());
-
 if (isValidEmail(customerEmail)) {
   try {
     const customerSubject = `${
       process.env.NODE_ENV === 'production' ? '' : '[TEST] '
-    }You're Rock'n! We got your order — ${shortOrderId(orderId)}`;
+    }You're Rock'n! We got your order — ${shortId}`;
 
-    // HTML comes from your template function (paste the new template into that function)
     const customerHtml = renderCustomerEmailHTML(config, session);
 
-    // Plain-text fallback (helps deliverability + non-HTML clients)
     const customerText =
-      `Order confirmation — Rock Creek Granite (#${shortId})\n` +
-      `Order #: ${orderId}\n` +
-      `Total: $${orderTotalUSD} ${currency}\n` +
-      `Ship ZIP: ${config?.zip || md.zip || 'N/A'}\n` +
-      `Shape: ${config?.shape || 'N/A'}\n`;
+      `Order confirmation — Rock Creek Granite (#${shortId})
+` +
+      `Order #: ${orderId}
+` +
+      `Total: $${orderTotalUSD} ${currency}
+` +
+      `Ship ZIP: ${config?.zip || md.zip || 'N/A'}
+` +
+      `Shape: ${config?.shape || 'N/A'}
+`;
 
     await sendEmail({
-      to: customerEmail, // sends to the purchaser
+      to: customerEmail,
       subject: customerSubject,
       html: customerHtml,
       text: customerText,
@@ -640,6 +658,12 @@ app.post('/api/create-checkout-session', async (req, res) => {
     const { config, email } = req.body || {};
     if (!config) return res.status(400).json({ error: 'Missing config' });
 
+    const normalizedEmail = normalizeEmail(email);
+    if (!isValidEmail(normalizedEmail)) {
+      return res.status(400).json({ error: 'A valid customer email is required' });
+    }
+
+    const qty = Math.max(1, parseInt(config?.qty || 1, 10) || 1);
     const p = computePricing(config);
 
     const line_items = [
@@ -652,7 +676,7 @@ app.post('/api/create-checkout-session', async (req, res) => {
           },
           unit_amount: Math.max(0, Math.round(p.services * 100)),
         },
-        quantity: 1,
+        quantity: qty,
       },
     ];
     if (p.tax > 0) {
@@ -662,7 +686,7 @@ app.post('/api/create-checkout-session', async (req, res) => {
           product_data: { name: 'Sales Tax' },
           unit_amount: Math.max(0, Math.round(p.tax * 100)),
         },
-        quantity: 1,
+        quantity: qty,
       });
     }
 
@@ -673,9 +697,9 @@ app.post('/api/create-checkout-session', async (req, res) => {
       sinks: Array.isArray(config.sinks)
         ? config.sinks.map(s => ({
             key: s.key,
-            type: s.type,               // 'rect' | 'oval' if provided by client
-            cutoutW: s.cutoutW,         // inches (optional)
-            cutoutH: s.cutoutH,         // inches (optional)
+            type: s.type,
+            cutoutW: s.cutoutW,
+            cutoutH: s.cutoutH,
             x: Number(s.x?.toFixed?.(2) ?? s.x),
             y: Number(s.y?.toFixed?.(2) ?? s.y),
             faucet: s.faucet ?? 1,
@@ -686,16 +710,29 @@ app.post('/api/create-checkout-session', async (req, res) => {
       edges: Array.isArray(config.edges) ? config.edges : [],
       backsplash: !!config.backsplash,
       zip: String(config.zip || ''),
+      qty,
     };
     const cfgB64 = encodeCfgForMeta(compactCfg);
-    const metadata = { zip: String(config.zip || ''), ...splitMeta('cfg', cfgB64) };
+    const metadata = {
+      zip: String(config.zip || ''),
+      email: normalizedEmail,
+      qty: String(qty),
+      ...splitMeta('cfg', cfgB64),
+    };
+
+    console.log('[checkout] creating session', {
+      email: normalizedEmail,
+      qty,
+      shape: compactCfg.shape,
+      zip: compactCfg.zip,
+    });
 
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
       line_items,
       success_url: `${FRONTEND_URL}/thank-you?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${FRONTEND_URL}/configurator?canceled=1`,
-      customer_email: email || undefined,
+      customer_email: normalizedEmail,
       metadata,
       shipping_address_collection: { allowed_countries: ['US'] },
     });
