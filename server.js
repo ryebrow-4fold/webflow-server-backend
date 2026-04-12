@@ -169,6 +169,18 @@ function normalizeEmail(value) {
 function isValidEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizeEmail(value));
 }
+function normalizeZip(value) {
+  return String(value || "").replace(/\D/g, "").slice(0, 5);
+}
+function getShippingPostalCodeFromSession(session) {
+  return normalizeZip(
+    session?.collected_information?.shipping_details?.address?.postal_code ||
+    session?.shipping_details?.address?.postal_code ||
+    session?.shipping?.address?.postal_code ||
+    session?.customer_details?.address?.postal_code ||
+    ""
+  );
+}
 
 async function getCustomerEmailFromSession(session) {
   if (session?.customer_details?.email) return session.customer_details.email;
@@ -322,7 +334,7 @@ async function sendEmail({ to, bcc, subject, text, html, attachments = [], reply
   return resp.json();
 }
 
-function renderCustomerEmailHTML(cfg, session) {
+function renderCustomerEmailHTML(cfg, session, options = {}) {
   const brandName = process.env.MAIL_FROM_NAME || "Rock Creek Granite";
   const logoUrl = process.env.MAIL_LOGO_URL || "https://cdn.prod.website-files.com/634cb6e50d8312e63b8d5ee1/67a16defcff775964e6f48ed_RCG_consumerLogo.svg";
   const safe = (v) => String(v ?? "").replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c]));
@@ -330,7 +342,9 @@ function renderCustomerEmailHTML(cfg, session) {
   const orderId = session?.id || "";
   const shortId = shortOrderId(orderId);
   const total = session?.amount_total || 0;
-  const zip = (cfg?.zip || "").toString();
+  const zip = normalizeZip((cfg?.zip || "").toString());
+  const actualShipZip = normalizeZip(options?.actualShipZip || "");
+  const zipMismatch = !!options?.zipMismatch;
   const dims = cfg?.shape === "rectangle"
     ? `${cfg?.dims?.L}" x ${cfg?.dims?.W}"`
     : cfg?.shape === "circle"
@@ -356,7 +370,8 @@ function renderCustomerEmailHTML(cfg, session) {
           <div><strong>Order #:</strong> ${safe(shortId)}</div>
           <div style="word-break:break-word;overflow-wrap:anywhere;"><strong>Stripe Ref:</strong> ${safe(orderId)}</div>
           <div><strong>Total Paid:</strong> ${safe(money(total))} ${safe(String(session?.currency || "usd").toUpperCase())}</div>
-          <div><strong>Ship ZIP:</strong> ${safe(zip || "N/A")}</div>
+          <div><strong>Quoted ZIP:</strong> ${safe(zip || "N/A")}</div>
+          ${zipMismatch ? `<div><strong>Checkout Ship ZIP:</strong> ${safe(actualShipZip || "N/A")}</div>` : ""}
           <div><strong>Shape:</strong> ${safe(cfg?.shape || "N/A")}</div>
           <div><strong>Size:</strong> ${safe(dims)}</div>
           <div><strong>Polished edges:</strong> ${safe(edges)}</div>
@@ -400,6 +415,9 @@ app.post("/api/checkout-webhook", express.raw({ type: "application/json" }), asy
         const customerEmail = normalizeEmail(
           (await getCustomerEmailFromSession(session)) || md.customer_email || md.email || ""
         );
+        const quotedZip = normalizeZip(config?.zip || md.zip || "");
+        const actualShipZip = getShippingPostalCodeFromSession(session);
+        const zipMismatch = !!(quotedZip && actualShipZip && quotedZip !== actualShipZip);
 
         console.log("[mail] resolved customer email", {
           session_id: orderId,
@@ -408,22 +426,37 @@ app.post("/api/checkout-webhook", express.raw({ type: "application/json" }), asy
           metadata_email: md.email || md.customer_email || null,
           resolved: customerEmail || null,
         });
+        console.log("[order] shipping zip check", {
+          session_id: orderId,
+          quotedZip: quotedZip || null,
+          actualShipZip: actualShipZip || null,
+          zipMismatch,
+        });
 
         try {
-          const internalSubject = `${process.env.NODE_ENV === "production" ? "" : "[TEST] "}New Order - ${shortId}`;
+          const internalSubject = `${process.env.NODE_ENV === "production" ? "" : "[TEST] "}${zipMismatch ? "ZIP MISMATCH REVIEW REQUIRED - " : "New Order - "}${shortId}`;
+          const mismatchBanner = zipMismatch
+            ? `<div style="margin:0 0 14px;padding:12px 14px;border:2px solid #c1121f;background:#fff1f2;color:#8a1020;font-weight:700;border-radius:8px;">
+                Shipping ZIP changed during checkout. Hold for review before production.<br>
+                Quoted ZIP: ${quotedZip || "N/A"}<br>
+                Stripe shipping ZIP: ${actualShipZip || "N/A"}
+              </div>`
+            : "";
           const internalHtml = `
           <div style="font-family:Arial,sans-serif;max-width:680px;margin:0 auto;background:#ffffff">
             <div style="padding:20px 0;text-align:center;border-bottom:2px solid #eee">
               <img src="https://cdn.prod.website-files.com/634cb6e50d8312e63b8d5ee1/698eb4a7c5210c924a31f46a_RCG_Logo.png" alt="Rock Creek Granite" style="height:48px" />
             </div>
             <div style="padding:20px">
-              <h2 style="margin:0 0 14px;font-size:18px;color:#111">New Countertop Order</h2>
+              <h2 style="margin:0 0 14px;font-size:18px;color:#111">${zipMismatch ? "Shipping Review Required" : "New Countertop Order"}</h2>
+              ${mismatchBanner}
               <div style="background:#fafafa;border:1px solid #eee;padding:14px">
                 <div><strong>Order ID:</strong> ${shortId}</div>
                 <div><strong>Stripe Session:</strong> ${orderId}</div>
                 <div><strong>Customer:</strong> ${customerEmail || "N/A"}</div>
                 <div><strong>Total:</strong> $${orderTotalUSD} ${currency}</div>
-                <div><strong>ZIP:</strong> ${config?.zip || "N/A"}</div>
+                <div><strong>Quoted ZIP:</strong> ${quotedZip || "N/A"}</div>
+                <div><strong>Stripe Ship ZIP:</strong> ${actualShipZip || "N/A"}</div>
                 <div><strong>Shape:</strong> ${config?.shape || "N/A"}</div>
                 <div><strong>Stone:</strong> ${config?.color || "N/A"}</div>
                 <div><strong>Sinks:</strong> ${(config?.sinks || []).length}</div>
@@ -438,26 +471,43 @@ app.post("/api/checkout-webhook", express.raw({ type: "application/json" }), asy
             to: ORDER_NOTIFY_EMAIL,
             subject: internalSubject,
             html: internalHtml,
-            text: `New order ${shortId}\nCustomer: ${customerEmail || "N/A"}\nTotal: $${orderTotalUSD} ${currency}`,
+            text: [
+              `${zipMismatch ? "ZIP MISMATCH REVIEW REQUIRED" : "New order"} ${shortId}`,
+              `Customer: ${customerEmail || "N/A"}`,
+              `Total: $${orderTotalUSD} ${currency}`,
+              `Quoted ZIP: ${quotedZip || "N/A"}`,
+              `Stripe Ship ZIP: ${actualShipZip || "N/A"}`,
+            ].join("\n"),
             attachments: dxfAttachment ? [dxfAttachment] : [],
             replyTo: ORDER_NOTIFY_EMAIL,
           });
-          console.log("[mail] internal branded order email sent");
+          console.log(`[mail] ${zipMismatch ? "internal zip-mismatch alert" : "internal branded order email"} sent`);
         } catch (e) {
           console.error("[mail] internal order email failed:", e);
         }
 
         if (isValidEmail(customerEmail)) {
           try {
-            const customerSubject = `${process.env.NODE_ENV === "production" ? "" : "[TEST] "}You're Rock'n! We got your order - ${shortId}`;
-            const customerHtml = renderCustomerEmailHTML(config, session);
-            const customerText = [
-              `Order confirmation - Rock Creek Granite (#${shortId})`,
-              `Order #: ${orderId}`,
-              `Total: $${orderTotalUSD} ${currency}`,
-              `Ship ZIP: ${config?.zip || md.zip || "N/A"}`,
-              `Shape: ${config?.shape || "N/A"}`,
-            ].join("\n");
+            const customerSubject = zipMismatch
+              ? `${process.env.NODE_ENV === "production" ? "" : "[TEST] "}We received your order - shipping review needed - ${shortId}`
+              : `${process.env.NODE_ENV === "production" ? "" : "[TEST] "}You're Rock'n! We got your order - ${shortId}`;
+            const customerHtml = renderCustomerEmailHTML(config, session, { zipMismatch, actualShipZip });
+            const customerText = zipMismatch
+              ? [
+                  `Order received - Rock Creek Granite (#${shortId})`,
+                  `Order #: ${orderId}`,
+                  `Total: $${orderTotalUSD} ${currency}`,
+                  `Quoted ZIP: ${quotedZip || "N/A"}`,
+                  `Checkout Ship ZIP: ${actualShipZip || "N/A"}`,
+                  "Your shipping ZIP changed during checkout, so our team needs to review shipping before production begins.",
+                ].join("\n")
+              : [
+                  `Order confirmation - Rock Creek Granite (#${shortId})`,
+                  `Order #: ${orderId}`,
+                  `Total: $${orderTotalUSD} ${currency}`,
+                  `Ship ZIP: ${quotedZip || "N/A"}`,
+                  `Shape: ${config?.shape || "N/A"}`,
+                ].join("\n");
             await sendEmail({
               to: customerEmail,
               subject: customerSubject,
@@ -465,7 +515,7 @@ app.post("/api/checkout-webhook", express.raw({ type: "application/json" }), asy
               text: customerText,
               replyTo: ORDER_NOTIFY_EMAIL,
             });
-            console.log("[mail] customer email sent ->", customerEmail);
+            console.log(`[mail] ${zipMismatch ? "customer shipping-review" : "customer"} email sent ->`, customerEmail);
           } catch (e) {
             console.error("[mail] customer email failed:", e);
           }
