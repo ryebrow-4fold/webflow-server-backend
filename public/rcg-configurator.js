@@ -74,22 +74,51 @@
   const MIN_SINK_EDGE = 4;
   const MIN_SINK_GAP = 4;
 
-  const DOLLARS_PER_SQFT = 55;
-  const SINK_PRICES = { 'bath-oval': 80, 'bath-rect': 95, 'kitchen-rect': 150 };
-  const DEFAULT_COLOR = 'bergen';
+  function numData(name, fallback) {
+  const v = Number(mount.dataset[name]);
+  return Number.isFinite(v) ? v : fallback;
+}
 
-  const LBS_PER_SQFT = 10.9;
-  const LTL_CWT_BASE = 35.9;
-  const BUSINESS_EMAIL = 'orders@rockcreekgranite.com';
-  const ORIGIN_ZIP_DEFAULT = mount.dataset.originZip || '63052';
+function parseDistanceBandsData(raw, fallback) {
+  try {
+    const parsed = JSON.parse(raw || '');
+    if (!Array.isArray(parsed) || !parsed.length) return fallback;
 
-  const DISTANCE_BANDS = [
-    { max: 250, mult: 1.00 },
-    { max: 600, mult: 1.25 },
-    { max: 1000, mult: 1.50 },
-    { max: 1500, mult: 1.70 },
-    { max: Infinity, mult: 1.85 }
-  ];
+    const cleaned = parsed
+      .map((x) => ({
+        max: x.max === 'Infinity' ? Infinity : Number(x.max),
+        mult: Number(x.mult),
+      }))
+      .filter((x) => Number.isFinite(x.max) || x.max === Infinity)
+      .filter((x) => Number.isFinite(x.mult));
+
+    return cleaned.length ? cleaned : fallback;
+  } catch (e) {
+    return fallback;
+  }
+}
+
+const DEFAULT_DISTANCE_BANDS = [
+  { max: 250, mult: 1.00 },
+  { max: 600, mult: 1.25 },
+  { max: 1000, mult: 1.50 },
+  { max: 1500, mult: 1.70 },
+  { max: Infinity, mult: 1.85 }
+];
+
+const DOLLARS_PER_SQFT = numData('pricePerSqft', 55);
+const SINK_PRICES = { 'bath-oval': 80, 'bath-rect': 95, 'kitchen-rect': 150 };
+const DEFAULT_COLOR = 'bergen';
+
+const LBS_PER_SQFT = numData('lbsPerSqft', 10.9);
+const LTL_CWT_BASE = numData('ltlCwtBase', 35.9);
+const BUSINESS_EMAIL = 'orders@rockcreekgranite.com';
+const ORIGIN_ZIP_DEFAULT = mount.dataset.originZip || '63052';
+
+const DISTANCE_BANDS = parseDistanceBandsData(
+  mount.dataset.distanceBands,
+  DEFAULT_DISTANCE_BANDS
+);
 
   const STEP_LABELS = {
     1: 'Define your shape',

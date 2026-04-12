@@ -46,16 +46,55 @@ console.log("[MAIL] Mode:", MAIL_MODE, " From:", MAIL_FROM, " As:", MAIL_FROM_NA
 console.log("[BOOT] FRONTEND_URL:", FRONTEND_URL);
 console.log("[BOOT] Allowed origins:", ALLOWED_ORIGINS.join(", "));
 
-const DOLLARS_PER_SQFT = 55;
-const LBS_PER_SQFT = 10.9;
-const LTL_CWT_BASE = 35.9;
-const DISTANCE_BANDS = [
-  { max: 250, mult: 1.0 },
-  { max: 600, mult: 1.25 },
+const DEFAULT_DOLLARS_PER_SQFT = 55;
+const DEFAULT_LBS_PER_SQFT = 10.9;
+const DEFAULT_LTL_CWT_BASE = 35.9;
+const DEFAULT_DISTANCE_BANDS = [
+  { max: 250,  mult: 1.0 },
+  { max: 600,  mult: 1.25 },
   { max: 1000, mult: 1.5 },
   { max: 1500, mult: 1.7 },
   { max: Infinity, mult: 1.85 },
 ];
+
+function numEnv(name, fallback) {
+  const v = Number(process.env[name]);
+  return Number.isFinite(v) ? v : fallback;
+}
+
+function parseDistanceBandsEnv(raw, fallback) {
+  try {
+    const parsed = JSON.parse(raw || '');
+    if (!Array.isArray(parsed) || !parsed.length) return fallback;
+
+    const cleaned = parsed
+      .map((x) => ({
+        max: x.max === 'Infinity' ? Infinity : Number(x.max),
+        mult: Number(x.mult),
+      }))
+      .filter((x) => Number.isFinite(x.max) || x.max === Infinity)
+      .filter((x) => Number.isFinite(x.mult));
+
+    return cleaned.length ? cleaned : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+const DOLLARS_PER_SQFT = numEnv('DOLLARS_PER_SQFT', DEFAULT_DOLLARS_PER_SQFT);
+const LBS_PER_SQFT = numEnv('LBS_PER_SQFT', DEFAULT_LBS_PER_SQFT);
+const LTL_CWT_BASE = numEnv('LTL_CWT_BASE', DEFAULT_LTL_CWT_BASE);
+const DISTANCE_BANDS = parseDistanceBandsEnv(
+  process.env.DISTANCE_BANDS_JSON,
+  DEFAULT_DISTANCE_BANDS
+);
+
+console.log('[PRICING]', {
+  DOLLARS_PER_SQFT,
+  LBS_PER_SQFT,
+  LTL_CWT_BASE,
+  DISTANCE_BANDS,
+});
 const SINK_PRICES = { "bath-oval": 80, "bath-rect": 95, "kitchen-rect": 150 };
 
 function areaSqft(shape, d) {
