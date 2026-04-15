@@ -630,19 +630,31 @@ const DISTANCE_BANDS = parseDistanceBandsData(
     document.body.style.overflow = '';
   }
 
-  function syncMode() {
-    if (isDesktop()) {
-      closeModal();
-      detachApp();
-      attachAppToDesktop();
-      setHandleMode();
-      const preview = el('.rcg-preview', appRoot);
-      if (preview) preview.style.removeProperty('--rcg-sheet-h');
-    } else {
-      detachApp();
-      setHandleMode();
-    }
+  function isModalOpen() {
+  return modal && modal.getAttribute('aria-hidden') === 'false';
+}
+
+function syncMode() {
+  if (isDesktop()) {
+    closeModal();
+    detachApp();
+    attachAppToDesktop();
+    setHandleMode();
+
+    const preview = el('.rcg-preview', appRoot);
+    if (preview) preview.style.removeProperty('--rcg-sheet-h');
+    return;
   }
+
+  // Mobile
+  setHandleMode();
+
+  if (isModalOpen()) {
+    attachAppToModal();
+  } else {
+    detachApp();
+  }
+}
 
   if (openBtn) openBtn.addEventListener('click', () => { if (isMobile()) openModal(); });
   if (closeBtn) closeBtn.addEventListener('click', closeModal);
@@ -1943,17 +1955,92 @@ const DISTANCE_BANDS = parseDistanceBandsData(
   });
 
   let resizeRaf = null;
-  function onResize() {
-    if (resizeRaf) cancelAnimationFrame(resizeRaf);
-    resizeRaf = requestAnimationFrame(() => {
-      resizeRaf = null;
-      setHandleMode();
+let lastLayoutMode = isDesktop() ? 'desktop' : 'mobile';
+let suppressMobileViewportRemount = false;
+
+appRoot.addEventListener('focusin', (e) => {
+  if (!isMobile()) return;
+
+  const t = e.target;
+  if (!t) return;
+
+  const isFormField =
+    t.tagName === 'INPUT' ||
+    t.tagName === 'TEXTAREA' ||
+    t.tagName === 'SELECT';
+
+  if (isFormField) {
+    suppressMobileViewportRemount = true;
+
+    if (isModalOpen()) {
+      attachAppToModal();
       syncMobilePreviewInset();
-      syncMode();
-      drawShape();
-    });
+    }
   }
-  window.addEventListener('resize', onResize);
+});
+
+appRoot.addEventListener('focusout', (e) => {
+  const t = e.target;
+  if (!t) return;
+
+  const isFormField =
+    t.tagName === 'INPUT' ||
+    t.tagName === 'TEXTAREA' ||
+    t.tagName === 'SELECT';
+
+  if (isFormField) {
+    setTimeout(() => {
+      suppressMobileViewportRemount = false;
+
+      if (isMobile() && isModalOpen()) {
+        attachAppToModal();
+        syncMobilePreviewInset();
+        drawShape();
+      }
+    }, 250);
+  }
+});
+
+function onResize() {
+  if (resizeRaf) cancelAnimationFrame(resizeRaf);
+
+  resizeRaf = requestAnimationFrame(() => {
+    resizeRaf = null;
+
+    const nextLayoutMode = isDesktop() ? 'desktop' : 'mobile';
+
+    setHandleMode();
+
+    // Android keyboard resize while typing in modal:
+    // keep the app mounted and skip full mode sync.
+    if (isMobile() && isModalOpen() && suppressMobileViewportRemount) {
+      attachAppToModal();
+      syncMobilePreviewInset();
+      return;
+    }
+
+    syncMobilePreviewInset();
+
+    // Only do a full remount if we actually crossed the breakpoint.
+    if (nextLayoutMode !== lastLayoutMode) {
+      syncMode();
+      lastLayoutMode = nextLayoutMode;
+      drawShape();
+      return;
+    }
+
+    // Stay mounted in the modal on mobile.
+    if (nextLayoutMode === 'mobile' && isModalOpen()) {
+      attachAppToModal();
+      drawShape();
+      return;
+    }
+
+    drawShape();
+  });
+}
+
+window.addEventListener('resize', onResize);
 
   function markReady() {
     mount.dataset.rcgStatus = 'ready';
